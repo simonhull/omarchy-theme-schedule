@@ -1,0 +1,206 @@
+#!/bin/bash
+
+# omarchy:summary=Switch themes on a daily schedule, such as a light theme at sunrise and a dark one at sunset
+# omarchy:args=[status|apply [--force]|on|off|list|add <at> <theme>|set <n> <at> <theme>|remove <n>|setup|teardown]
+# omarchy:examples=omarchy theme schedule add sunset "Tokyo Night"|omarchy theme schedule add 07:30 flexoki-light|omarchy theme schedule status
+
+source "${OMARCHY_THEME_SCHEDULE_LIB:-/usr/share/omarchy-theme-schedule}/schedule.sh" || exit 1
+
+TS_MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+TS_MENU_BLOCK="$TS_LIB/menu.jsonc"
+TS_ICON="󰸌"
+
+# English for every string shown. omarchy-i18n prints a key back when its
+# catalog has no entry, which holds for all of these until they are added to
+# Omarchy's own catalog; then this table can go.
+declare -A TS_ENGLISH=(
+  [themeSchedule.statusOn]="Theme schedule: on"
+  [themeSchedule.statusOff]="Theme schedule: off"
+  [themeSchedule.location]="Location: %1"
+  [themeSchedule.noLocation]="No location set, so sunrise is %1 and sunset is %2. Set one in the weather panel."
+  [themeSchedule.polar]="The sun does not rise or set here today, so sunrise is %1 and sunset is %2."
+  [themeSchedule.noSlots]="No slots. Add one with: omarchy theme schedule add <at> <theme>"
+  [themeSchedule.active]="active"
+  [themeSchedule.next]="Next switch: %1 at %2"
+  [themeSchedule.invalidAt]="Not a schedule time: %1 (use HH:MM, sunrise or sunset, with an optional offset like sunset-30m)"
+  [themeSchedule.unknownTheme]="Theme '%1' is not installed"
+  [themeSchedule.noSuchSlot]="No slot %1"
+  [themeSchedule.themeMissing]="Scheduled theme is not installed"
+  [themeSchedule.themeMissingBody]="Skipped %1. The schedule carries on at the next slot."
+  [themeSchedule.timerFailed]="Could not start the schedule timer. See: systemctl --user status omarchy-theme-schedule.timer"
+  [themeSchedule.enabled]="Theme schedule on"
+  [themeSchedule.disabled]="Theme schedule off"
+  [themeSchedule.setupDone]="Added Appearance › Theme Schedule to the Omarchy menu"
+  [themeSchedule.teardownDone]="Removed Theme Schedule from the Omarchy menu"
+  [themeSchedule.menuFileUnreadable]="Cannot add the menu rows: %1 has no line holding just '{'"
+  [themeSchedule.menuFailed]="Theme schedule not changed"
+  [themeSchedule.menuSlots]="Theme schedule"
+  [themeSchedule.menuSlotAction]="Slot"
+  [themeSchedule.menuChangeTime]="Change time"
+  [themeSchedule.menuChangeTheme]="Change theme"
+  [themeSchedule.menuRemove]="Remove"
+  [themeSchedule.menuPickTime]="When"
+  [themeSchedule.menuSunrise]="Sunrise"
+  [themeSchedule.menuSunset]="Sunset"
+  [themeSchedule.menuClock]="Specific time"
+  [themeSchedule.menuClockPrompt]="Time (HH:MM)"
+  [themeSchedule.menuOffset]="How close to it"
+  [themeSchedule.offsetExact]="Exactly"
+  [themeSchedule.offsetHourBefore]="1 hour before"
+  [themeSchedule.offsetHalfBefore]="30 minutes before"
+  [themeSchedule.offsetHalfAfter]="30 minutes after"
+  [themeSchedule.offsetHourAfter]="1 hour after"
+  [themeSchedule.menuPickTheme]="Theme"
+)
+
+# A user-facing string in the current language, with %1-style arguments.
+t() {
+  local key=$1 text token i
+  shift
+
+  text=$(omarchy-i18n "$key" "$@" 2>/dev/null)
+  if [[ -z $text || $text == "$key" ]]; then
+    text=${TS_ENGLISH[$key]:-$key}
+    # Highest first, so %1 never eats the start of %10.
+    for ((i = $#; i >= 1; i--)); do
+      token="%$i"
+      text=${text//"$token"/"${!i}"}
+    done
+  fi
+
+  printf '%s\n' "$text"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: omarchy-theme-schedule <command>
+
+  status                  Show the schedule and what it does today
+  apply [--force]         Switch to the active slot's theme if the slot changed
+  on | off                Turn the schedule on or off
+  list                    List the slots
+  add <at> <theme>        Add a slot
+  set <n> <at> <theme>    Replace slot n
+  remove <n>              Remove slot n
+  setup | teardown        Add or remove Theme Schedule in the Omarchy menu
+
+<at> is HH:MM, sunrise or sunset, with an optional offset: sunset-30m, sunrise+1h.
+EOF
+}
+
+# Rewrites the schedule through a jq filter (and its arguments), atomically.
+ts_update_config() {
+  local current tmp
+
+  current=$(cat "$TS_CONFIG" 2>/dev/null || echo '{"slots": []}')
+  mkdir -p "${TS_CONFIG%/*}"
+  tmp=$(mktemp "$TS_CONFIG.XXXXXX") || return 1
+
+  if jq "$@" <<<"$current" >"$tmp"; then
+    mv "$tmp" "$TS_CONFIG"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+slot_count() {
+  jq '.slots // [] | length' "$TS_CONFIG" 2>/dev/null || echo 0
+}
+
+slot_field() {
+  jq -r --argjson index "$(($1 - 1))" --arg field "$2" '.slots[$index][$field]' "$TS_CONFIG"
+}
+
+check_slot_number() {
+  if [[ $1 =~ ^[1-9][0-9]*$ ]] && (($1 <= $(slot_count))); then
+    return 0
+  fi
+  t themeSchedule.noSuchSlot "$1" >&2
+  return 1
+}
+
+check_at() {
+  ts_parse_at "$1" >/dev/null && return 0
+  t themeSchedule.invalidAt "$1" >&2
+  return 1
+}
+
+# Prints the installed theme a name refers to, or explains that there is none.
+resolve_theme() {
+  local theme
+
+  theme=$(ts_normalize_theme "$1")
+  if ! ts_theme_installed "$theme"; then
+    t themeSchedule.unknownTheme "$1" >&2
+    return 1
+  fi
+  echo "$theme"
+}
+
+# An edited schedule takes effect at once, rather than at the next slot.
+apply_if_on() {
+  if omarchy-toggle-enabled theme-schedule; then
+    cmd_apply --force
+  fi
+  return 0
+}
+
+cmd_list() {
+  local slots
+
+  slots=$(jq -r '.slots // [] | to_entries[] | "\(.key + 1)  \(.value.at)  \(.value.theme)"' "$TS_CONFIG" 2>/dev/null)
+  if [[ -n $slots ]]; then
+    echo "$slots"
+  else
+    t themeSchedule.noSlots
+  fi
+}
+
+cmd_add() {
+  local at=${1:-} theme
+
+  (($# == 2)) || { usage >&2; return 1; }
+  check_at "$at" || return 1
+  theme=$(resolve_theme "$2") || return 1
+
+  ts_update_config --arg at "$at" --arg theme "$theme" '.slots = ((.slots // []) + [{at: $at, theme: $theme}])' || return 1
+  apply_if_on
+}
+
+cmd_set() {
+  local number=${1:-} at=${2:-} theme
+
+  (($# == 3)) || { usage >&2; return 1; }
+  check_slot_number "$number" || return 1
+  check_at "$at" || return 1
+  theme=$(resolve_theme "$3") || return 1
+
+  ts_update_config --argjson index "$((number - 1))" --arg at "$at" --arg theme "$theme" \
+    '.slots[$index] = {at: $at, theme: $theme}' || return 1
+  apply_if_on
+}
+
+cmd_remove() {
+  (($# == 1)) || { usage >&2; return 1; }
+  check_slot_number "$1" || return 1
+
+  ts_update_config --argjson index "$(($1 - 1))" 'del(.slots[$index])' || return 1
+  apply_if_on
+}
+
+main() {
+  case ${1:-status} in
+    list) cmd_list ;;
+    add) cmd_add "${@:2}" ;;
+    set) cmd_set "${@:2}" ;;
+    remove) cmd_remove "${@:2}" ;;
+    -h | --help | help) usage ;;
+    *)
+      usage >&2
+      return 1
+      ;;
+  esac
+}
+
+main "$@"

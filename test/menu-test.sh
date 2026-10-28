@@ -102,13 +102,13 @@ test_menu_slots_lists_today_in_time_order() {
   write_schedule '{"slots":[{"at":"19:00","theme":"tokyo-night"},{"at":"07:00","theme":"flexoki-light"}]}'
   set_now "2026-10-28 12:00"
   omarchy-theme-schedule menu slots
-  assert_contains "$(stub_log)" "menu Theme schedule: [2. 07:00 (07:00) → Flexoki Light] [1. 19:00 (19:00) → Tokyo Night]" "rows"
+  assert_contains "$(stub_log)" "menu Theme schedule: [2. 07:00 " "rows"
 }
 
 test_menu_slots_remove() {
   write_schedule '{"slots":[{"at":"07:00","theme":"a"},{"at":"19:00","theme":"b"}]}'
   set_now "2026-10-28 12:00"
-  answer "2. 19:00 (19:00) → B" "Remove"
+  answer "2. 19:00 → B" "Remove"
   omarchy-theme-schedule menu slots
   assert_eq '[{"at":"07:00","theme":"a"}]' "$(read_schedule)" "removed"
 }
@@ -117,7 +117,7 @@ test_menu_slots_change_theme() {
   add_theme a everforest
   write_schedule '{"slots":[{"at":"07:00","theme":"a"}]}'
   set_now "2026-10-28 12:00"
-  answer "1. 07:00 (07:00) → A" "Change theme" "Everforest"
+  answer "1. 07:00 → A" "Change theme" "Everforest"
   omarchy-theme-schedule menu slots
   assert_eq '[{"at":"07:00","theme":"everforest"}]' "$(read_schedule)" "theme changed"
 }
@@ -126,7 +126,7 @@ test_menu_slots_change_time() {
   add_theme a
   write_schedule '{"slots":[{"at":"07:00","theme":"a"}]}'
   set_now "2026-10-28 12:00"
-  answer "1. 07:00 (07:00) → A" "Change time" "Sunrise" "1 hour after"
+  answer "1. 07:00 → A" "Change time" "Sunrise" "1 hour after"
   omarchy-theme-schedule menu slots
   assert_eq '[{"at":"sunrise+1h","theme":"a"}]' "$(read_schedule)" "time changed"
 }
@@ -134,6 +134,191 @@ test_menu_slots_change_time() {
 test_menu_slots_without_slots_offers_add() {
   omarchy-theme-schedule menu slots
   assert_contains "$(stub_log)" "menu When:" "goes straight to adding"
+}
+
+# --- damaged, linked and unusual menu files ---
+
+BEGIN='  // theme-schedule:begin (x)'
+END='  // theme-schedule:end'
+
+assert_setup_and_teardown_refuse() {
+  local message=$1
+  cp "$(MENU)" "$TEST_ROOT/before"
+  assert_status 1 "$message: setup refuses" omarchy-theme-schedule setup
+  assert_status 0 "$message: setup leaves the file" cmp "$TEST_ROOT/before" "$(MENU)"
+  assert_status 1 "$message: teardown refuses" omarchy-theme-schedule teardown
+  assert_status 0 "$message: teardown leaves the file" cmp "$TEST_ROOT/before" "$(MENU)"
+  assert_contains "$(omarchy-theme-schedule setup 2>&1 >/dev/null)" "unfinished theme-schedule block" "$message: explains"
+  assert_eq "" "$(ls "$(dirname "$(MENU)")" | grep -v '^omarchy-menu.jsonc$')" "$message: no temp files left"
+}
+
+test_begin_marker_without_end_is_refused() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n%s\n  "keep": {"label":"Keep"},\n  "keep2": {"label":"Keep"}\n}\n' "$BEGIN" >"$(MENU)"
+  assert_setup_and_teardown_refuse "begin only"
+}
+
+test_end_marker_without_begin_is_refused() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n  "keep": {"label":"Keep"},\n%s\n  "keep2": {"label":"Keep"}\n}\n' "$END" >"$(MENU)"
+  assert_setup_and_teardown_refuse "end only"
+}
+
+test_end_marker_before_begin_is_refused() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n%s\n  "keep": {"label":"Keep"},\n%s\n}\n' "$END" "$BEGIN" >"$(MENU)"
+  assert_setup_and_teardown_refuse "reversed"
+}
+
+test_two_blocks_are_refused() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n%s\n%s\n  "keep": {"label":"Keep"},\n%s\n%s\n}\n' "$BEGIN" "$END" "$BEGIN" "$END" >"$(MENU)"
+  assert_setup_and_teardown_refuse "two blocks"
+}
+
+test_setup_replaces_an_old_block_in_one_pass() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n%s\n  "old": {"label":"Old"},\n%s\n  "keep": {"label":"Keep"}\n}\n' "$BEGIN" "$END" >"$(MENU)"
+  assert_status 0 "setup" omarchy-theme-schedule setup
+  assert_eq 1 "$(grep -c 'theme-schedule:begin' "$(MENU)")" "one block"
+  assert_eq null "$(menu_json | jq '.old')" "old row gone"
+  assert_eq '"Keep"' "$(menu_json | jq '.keep.label')" "user row kept"
+}
+
+test_symlinked_menu_file_stays_a_link() {
+  mkdir -p "$(dirname "$(MENU)")" "$TEST_ROOT/dotfiles"
+  printf '{\n  "personal": {"label":"Personal"}\n}\n' >"$TEST_ROOT/dotfiles/omarchy-menu.jsonc"
+  cp "$TEST_ROOT/dotfiles/omarchy-menu.jsonc" "$TEST_ROOT/before"
+  ln -s "$TEST_ROOT/dotfiles/omarchy-menu.jsonc" "$(MENU)"
+  assert_status 0 "setup" omarchy-theme-schedule setup
+  assert_status 0 "still a link" test -L "$(MENU)"
+  assert_contains "$(cat "$TEST_ROOT/dotfiles/omarchy-menu.jsonc")" "theme-schedule:begin" "target has the block"
+  assert_status 0 "teardown" omarchy-theme-schedule teardown
+  assert_status 0 "still a link" test -L "$(MENU)"
+  assert_status 0 "target restored" cmp "$TEST_ROOT/before" "$TEST_ROOT/dotfiles/omarchy-menu.jsonc"
+}
+
+test_setup_accepts_an_opening_brace_with_a_comment() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{ // my rows\n  "personal": {"label":"Personal"}\n}\n' >"$(MENU)"
+  cp "$(MENU)" "$TEST_ROOT/before"
+  assert_status 0 "setup" omarchy-theme-schedule setup
+  # Not parsed: the shell itself only drops whole-line comments, so this file is
+  # the user's own problem. What matters is where the block went.
+  assert_eq '{ // my rows' "$(sed -n 1p "$(MENU)")" "opening line kept"
+  assert_contains "$(sed -n 2p "$(MENU)")" "theme-schedule:begin" "block right after it"
+  assert_status 0 "teardown" omarchy-theme-schedule teardown
+  assert_status 0 "round trip" cmp "$TEST_ROOT/before" "$(MENU)"
+}
+
+test_setup_treats_an_empty_file_as_missing() {
+  mkdir -p "$(dirname "$(MENU)")"
+  : >"$(MENU)"
+  assert_status 0 "empty" omarchy-theme-schedule setup
+  assert_eq '"Theme Schedule"' "$(menu_json | jq '."appearance.theme-schedule".label')" "rows added"
+  printf ' \n\n' >"$(MENU)"
+  omarchy-theme-schedule teardown
+  assert_status 0 "blank" omarchy-theme-schedule setup
+  assert_eq '"Theme Schedule"' "$(menu_json | jq '."appearance.theme-schedule".label')" "rows added to blank"
+}
+
+test_setup_refuses_an_items_wrapper() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n  "items": {\n    "personal": {"label":"Personal"}\n  }\n}\n' >"$(MENU)"
+  cp "$(MENU)" "$TEST_ROOT/before"
+  assert_status 1 "refuses" omarchy-theme-schedule setup
+  assert_contains "$(omarchy-theme-schedule setup 2>&1 >/dev/null)" 'wraps its rows in "items"' "explains"
+  assert_status 0 "untouched" cmp "$TEST_ROOT/before" "$(MENU)"
+}
+
+test_setup_leaves_no_temp_files_when_refusing() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{"personal": {"label":"Personal"}}\n' >"$(MENU)"
+  omarchy-theme-schedule setup 2>/dev/null
+  assert_eq "omarchy-menu.jsonc" "$(ls "$(dirname "$(MENU)")")" "only the user file"
+}
+
+test_block_goes_after_the_first_opening_brace_only() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n  "a": {"label":"A"},\n  "b": {\n    "label":"B"\n  }\n}\n' >"$(MENU)"
+  printf '{\n  "a": {"label":"A"},\n  "b": {\n    "label":"B"\n  }\n}\n' >"$TEST_ROOT/before"
+  omarchy-theme-schedule setup
+  assert_eq '{' "$(head -n 1 "$(MENU)")" "first line"
+  assert_contains "$(sed -n 2p "$(MENU)")" "theme-schedule:begin" "block second"
+  assert_eq 1 "$(grep -c 'theme-schedule:begin' "$(MENU)")" "one block"
+  omarchy-theme-schedule teardown
+  assert_status 0 "round trip" cmp "$TEST_ROOT/before" "$(MENU)"
+}
+
+test_menu_rows_have_the_right_when_and_action() {
+  omarchy-theme-schedule setup
+  local p='."appearance.theme-schedule'
+  assert_eq '"! omarchy-toggle-enabled theme-schedule"' "$(menu_json | jq "$p.on\".when")" "on when"
+  assert_eq '"omarchy-theme-schedule on"' "$(menu_json | jq "$p.on\".action")" "on action"
+  assert_eq '"omarchy-toggle-enabled theme-schedule"' "$(menu_json | jq "$p.off\".when")" "off when"
+  assert_eq '"omarchy-theme-schedule off"' "$(menu_json | jq "$p.off\".action")" "off action"
+  assert_eq null "$(menu_json | jq "$p.slots\".when")" "slots when"
+  assert_eq '"omarchy-theme-schedule menu slots"' "$(menu_json | jq "$p.slots\".action")" "slots action"
+  assert_eq null "$(menu_json | jq "$p.add\".when")" "add when"
+  assert_eq '"omarchy-theme-schedule menu add"' "$(menu_json | jq "$p.add\".action")" "add action"
+  assert_eq '"omarchy-toggle-enabled theme-schedule"' "$(menu_json | jq "$p.apply\".when")" "apply when"
+  assert_eq '"omarchy-theme-schedule apply --force"' "$(menu_json | jq "$p.apply\".action")" "apply action"
+}
+
+test_menu_add_with_an_empty_typed_time_is_silent() {
+  add_theme flexoki-light
+  answer "Specific time" "<empty>"
+  assert_status 0 "returns" omarchy-theme-schedule menu add
+  assert_not_contains "$(stub_log)" "notify" "no notification"
+  assert_status 1 "nothing stored" test -f "$HOME/.local/state/omarchy/settings/theme-schedule.json"
+}
+
+test_menu_add_trims_the_typed_time() {
+  add_theme flexoki-light
+  answer "Specific time" " 06:45 " "Flexoki Light"
+  omarchy-theme-schedule menu add
+  assert_eq '[{"at":"06:45","theme":"flexoki-light"}]' "$(read_schedule)" "stored trimmed"
+}
+
+test_menu_add_with_an_uninstalled_theme_notifies_the_error() {
+  answer "Sunrise" "Exactly" "Ghost Theme"
+  assert_status 1 "menu add reports failure" omarchy-theme-schedule menu add
+  assert_contains "$(stub_log)" "Theme schedule not changed" "title"
+  assert_contains "$(stub_log)" "is not installed" "reason"
+  assert_status 1 "nothing stored" test -f "$HOME/.local/state/omarchy/settings/theme-schedule.json"
+}
+
+test_menu_run_without_error_text_still_has_a_body() {
+  menu_run_probe() { return 1; }
+  source <(sed -n '/^menu_run() {/,/^}/p' "$REPO/bin/omarchy-theme-schedule")
+  source <(sed -n '/^t() {/,/^}/p' "$REPO/bin/omarchy-theme-schedule")
+  declare -gA TS_ENGLISH=([themeSchedule.menuFailed]="Theme schedule not changed")
+  TS_ICON=x
+  menu_run menu_run_probe
+  assert_contains "$(stub_log)" "notify -g x -u normal Theme schedule not changed Theme schedule not changed" "generic body"
+}
+
+test_menu_add_dismissed_at_the_theme_stores_nothing() {
+  answer "Sunrise" "Exactly"
+  assert_status 0 "returns" omarchy-theme-schedule menu add
+  assert_status 1 "nothing stored" test -f "$HOME/.local/state/omarchy/settings/theme-schedule.json"
+}
+
+test_menu_add_passes_maxheight_to_the_theme_picker() {
+  add_theme tokyo-night
+  answer "Sunrise" "Exactly" "Tokyo Night"
+  omarchy-theme-schedule menu add
+  assert_contains "$(stub_log)" "menu Theme: [Tokyo Night] args: --maxheight 520" "flag reaches the picker"
+}
+
+test_menu_slots_full_row_text_for_sun_and_clock_slots() {
+  set_location 51.5 -0.12 London
+  write_schedule '{"slots":[{"at":"sunset-30m","theme":"tokyo-night"},{"at":"07:00","theme":"flexoki-light"}]}'
+  set_now "2026-10-28 12:00"
+  omarchy-theme-schedule menu slots
+  local line
+  line=$(grep '^menu Theme schedule:' "$STUB_LOG")
+  assert_eq "menu Theme schedule: [2. 07:00 → Flexoki Light] [1. Sunset-30m (16:12) → Tokyo Night]" "$line" "exact rows, today only"
 }
 
 run_tests

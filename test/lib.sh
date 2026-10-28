@@ -164,10 +164,12 @@ for arg in "$@"; do
   [[ $arg == -- ]] && break
   options+=("$arg")
 done
+shift ${#options[@]}
+[[ ${1:-} == -- ]] && shift
 if (( ${#options[@]} == 0 )) && [[ ! -t 0 ]]; then
   mapfile -t options
 fi
-{ printf "menu %s:" "$prompt"; printf " [%s]" "${options[@]}"; echo; } >>"$STUB_LOG"
+{ printf "menu %s:" "$prompt"; printf " [%s]" "${options[@]}"; (( $# )) && printf " args: %s" "$*"; echo; } >>"$STUB_LOG"
 answer=$(head -n 1 "$STUB_ANSWERS")
 sed -i 1d "$STUB_ANSWERS"
 [[ -n $answer ]] || exit 1
@@ -176,6 +178,7 @@ printf "%s\n" "$answer"'
 answer=$(head -n 1 "$STUB_ANSWERS")
 sed -i 1d "$STUB_ANSWERS"
 [[ -n $answer ]] || exit 1
+[[ $answer == "<empty>" ]] && answer=""
 printf "%s\n" "$answer"'
 
   # Any real Omarchy or desktop command not stubbed above must fail loudly

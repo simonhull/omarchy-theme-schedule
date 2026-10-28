@@ -131,4 +131,37 @@ test_needs_omarchy() {
   assert_eq 0 "$(count_in_log '^makepkg')" "no build"
 }
 
+test_a_successful_install_exits_zero() {
+  given_fixtures 0.1.1
+  assert_status 0 "exit status" bash "$REPO/install.sh"
+  assert_eq "" "$(install_it | grep -i 'unbound')" "no trap error"
+}
+
+test_install_refreshes_the_update_check() {
+  given_fixtures 0.1.1
+  given_installed 0.1.0-1
+  install_it >/dev/null
+  assert_eq 1 "$(count_in_log '^schedule check-update$')" "checks once"
+  # After setup, so it is the new version that checks.
+  assert_eq "schedule setup
+schedule check-update" "$(grep '^schedule' "$STUB_LOG")" "order"
+}
+
+test_a_failing_update_check_does_not_fail_the_install() {
+  given_fixtures 0.1.1
+  stub omarchy-theme-schedule 'echo "schedule $*" >>"$STUB_LOG"
+[[ $1 == check-update ]] && exit 1
+exit 0'
+  assert_contains "$(install_it)" "Installed 0.1.1" "finishes"
+  rm -f "$INSTALLED_FILE"
+  assert_status 0 "install still succeeds" bash "$REPO/install.sh"
+}
+
+test_same_version_skips_the_update_check() {
+  given_fixtures 0.1.1
+  given_installed 0.1.1-1
+  install_it >/dev/null
+  assert_eq 0 "$(count_in_log 'check-update')" "nothing changed"
+}
+
 run_tests

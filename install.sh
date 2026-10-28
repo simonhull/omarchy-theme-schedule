@@ -28,10 +28,13 @@ shown() {
   echo "${1%-1}"
 }
 
+# Global, because the EXIT trap runs after main has returned.
+dir=
+
 # Everything happens inside main, called on the last line, so a download cut
 # short runs nothing at all.
 main() {
-  local dir file force=false before after pkgver pkgrel
+  local file force=false before after pkgver pkgrel
 
   [[ ${OMARCHY_THEME_SCHEDULE_FORCE:-} == 1 ]] && force=true
   for file in "$@"; do
@@ -92,6 +95,10 @@ main() {
 
   echo "==> Adding Theme Schedule to the Omarchy menu"
   omarchy-theme-schedule setup || echo "The menu was not changed; see the message above."
+
+  # Refreshes the cached latest version, so the Update menu row goes away now
+  # that this version is installed. Best effort: it needs the network.
+  omarchy-theme-schedule check-update >/dev/null 2>&1 || true
 
   if omarchy-toggle-enabled theme-schedule; then
     cat <<'EOT'

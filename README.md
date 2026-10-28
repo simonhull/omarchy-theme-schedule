@@ -45,6 +45,21 @@ Then, either way:
     omarchy theme schedule setup # adds Appearance › Theme Schedule to the menu
     omarchy theme schedule on
 
+## Updates
+
+`omarchy update` does not upgrade this package, since it is not in a package
+repository. Instead, after each `omarchy update`, a hook checks GitHub for a
+newer release and sends one notification per new version. While an update is
+waiting, an **Update › Theme Schedule** row appears in the Omarchy menu (and
+**Update Theme Schedule** under Appearance › Theme Schedule); either one opens
+a terminal and installs it. From a terminal:
+
+    omarchy theme schedule update
+
+The hook and the menu rows are put in place by `omarchy theme schedule setup`
+(the installer runs it), so after upgrading from an older version, run `setup`
+once. `teardown` removes them.
+
 ## Use
 
     omarchy theme schedule status
@@ -77,6 +92,8 @@ that slot changes, so a theme you picked yourself holds until the next one.
 | On/off | `~/.local/state/omarchy/toggles/theme-schedule` |
 | Last applied slot | `~/.local/state/omarchy/theme-schedule.applied` |
 | Location | `~/.local/state/omarchy/settings/weather.json` (the weather panel's), else your timezone's |
+| Update hook | `~/.config/omarchy/hooks/post-update.d/omarchy-theme-schedule` |
+| Latest release seen, and last one notified | `~/.cache/omarchy-theme-schedule/latest` and `notified` |
 | Menu rows | between `// theme-schedule:begin` and `:end` in `~/.config/omarchy/extensions/omarchy-menu.jsonc` |
 
 ### Menu file notes

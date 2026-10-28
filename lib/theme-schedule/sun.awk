@@ -4,7 +4,7 @@
 #
 # Variables: lat and lon in degrees (north and east positive), and noon, the
 # epoch of local noon on the day wanted. Prints "<rise> <set>", or "polar"
-# when the sun does not cross the horizon that day.
+# when the sun does not cross the horizon that day. Exits 2 on bad input.
 
 function rad(d) { return d * PI / 180 }
 function deg(r) { return r * 180 / PI }
@@ -14,6 +14,12 @@ function acos(x) { return atan2(sqrt(1 - x * x), x) }
 function asin(x) { return atan2(x, sqrt(1 - x * x)) }
 
 BEGIN {
+  if (lat !~ /^-?[0-9]+([.][0-9]+)?$/ || lon !~ /^-?[0-9]+([.][0-9]+)?$/ || noon !~ /^[0-9]+$/ ||
+      lat + 0 < -90 || lat + 0 > 90 || lon + 0 < -180 || lon + 0 > 180) {
+    print "sun.awk: lat, lon and noon must be numbers in range" > "/dev/stderr"
+    exit 2
+  }
+
   PI = atan2(0, -1)
   J2000 = 2451545.0
   UNIX_EPOCH_JD = 2440587.5

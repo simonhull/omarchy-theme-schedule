@@ -24,11 +24,36 @@ test_menu_select_stub_pops_answers_in_order() {
 
 test_theme_list_stub_prints_display_names() {
   add_theme tokyo-night flexoki-light
-  assert_eq $'Flexoki Light\nTokyo Night' "$(omarchy-theme-list)" "display names, sorted"
+  mkdir -p "$HOME/.config/omarchy/themes/my-custom" "$HOME/.config/omarchy/themes/tokyo-night"
+  assert_eq $'Flexoki Light\nMy Custom\nTokyo Night' "$(omarchy-theme-list)" "display names, user themes included, de-duplicated, sorted"
 }
 
 test_each_test_gets_its_own_home() {
-  assert_contains "$HOME" "$TEST_ROOT" "HOME is under the test root"
+  assert_status 0 "TEST_ROOT is set" test -n "$TEST_ROOT"
+  assert_eq "$TEST_ROOT/home" "$HOME" "HOME is inside the test root"
+  assert_status 1 "HOME is not the real home" test "$HOME" = "$REAL_HOME"
+}
+
+# Tests run alphabetically, so a_ records its root and b_ compares against it.
+test_roots_a_records_root() {
+  PREVIOUS_ROOT=$TEST_ROOT
+}
+
+test_roots_b_differs_from_previous() {
+  assert_status 0 "previous root was recorded" test -n "${PREVIOUS_ROOT:-}"
+  assert_status 1 "each test gets a fresh root" test "$TEST_ROOT" = "${PREVIOUS_ROOT:-}"
+  assert_status 1 "previous root is removed" test -e "${PREVIOUS_ROOT:-/nonexistent-}"
+}
+
+test_stubs_come_first_on_path() {
+  assert_eq "$TEST_ROOT/bin/omarchy-theme-set" "$(command -v omarchy-theme-set)" "stub shadows the real command"
+}
+
+test_unstubbed_omarchy_commands_fail_loudly() {
+  [[ -e /usr/bin/omarchy-theme-current ]] || return 0
+  omarchy-theme-current >/dev/null 2>&1
+  assert_eq 99 "$?" "unstubbed command exits 99"
+  assert_contains "$(stub_log)" "UNSTUBBED omarchy-theme-current" "unstubbed call is logged"
 }
 
 run_tests

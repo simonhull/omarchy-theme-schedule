@@ -5,6 +5,7 @@
 
 set -uo pipefail
 
+REAL_HOME=$HOME
 REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 export OMARCHY_THEME_SCHEDULE_LIB="$REPO/lib/theme-schedule"
 
@@ -26,12 +27,14 @@ assert_eq() {
 assert_contains() {
   local haystack=$1 needle=$2 message=$3
   TESTS_RUN=$((TESTS_RUN + 1))
+  [[ -n $needle ]] || { fail "$message"$'\n'"  empty needle"; return; }
   [[ $haystack == *"$needle"* ]] || fail "$message"$'\n'"  missing: $needle"$'\n'"  in: $haystack"
 }
 
 assert_not_contains() {
   local haystack=$1 needle=$2 message=$3
   TESTS_RUN=$((TESTS_RUN + 1))
+  [[ -n $needle ]] || { fail "$message"$'\n'"  empty needle"; return; }
   [[ $haystack != *"$needle"* ]] || fail "$message"$'\n'"  unexpected: $needle"$'\n'"  in: $haystack"
 }
 
@@ -116,12 +119,18 @@ schedule_on() {
 }
 
 setup_env() {
-  TEST_ROOT=$(mktemp -d)
+  local cmd
+  TEST_ROOT=$(mktemp -d) || { echo "mktemp failed" >&2; exit 1; }
   export HOME="$TEST_ROOT/home"
   export OMARCHY_PATH="$TEST_ROOT/omarchy"
   export STUB_LOG="$TEST_ROOT/stub.log"
   export STUB_ANSWERS="$TEST_ROOT/answers"
   export TZ=Europe/London
+  export LC_ALL=C
+  # Cut the test off from the real session: no XDG overrides, bus, or compositor.
+  unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
+  mkdir -p "$TEST_ROOT/run"
+  export XDG_RUNTIME_DIR="$TEST_ROOT/run"
   unset OMARCHY_THEME_SCHEDULE_NOW STUB_THEME_MODE
 
   mkdir -p "$HOME/.local/state/omarchy/current" "$HOME/.local/state/omarchy/settings" \
@@ -144,10 +153,10 @@ case ${2:-toggle} in
   off) rm -f "$flag" ;;
   *) if [[ -f $flag ]]; then rm -f "$flag"; else mkdir -p "${flag%/*}"; touch "$flag"; fi ;;
 esac'
-  stub omarchy-theme-list 'for dir in "$OMARCHY_PATH"/themes/*/; do
+  stub omarchy-theme-list 'for dir in "$OMARCHY_PATH"/themes/*/ "$HOME"/.config/omarchy/themes/*/; do
   [[ -d $dir ]] || continue
-  basename "$dir" | sed -E "s/-/ /g; s/\b(.)/\u\1/g"
-done'
+  basename "$dir"
+done | sed -E "s/(^|-)([a-z])/\1\u\2/g; s/-/ /g" | sort -u'
   stub omarchy-menu-select 'prompt=$1
 shift
 options=()
@@ -169,11 +178,19 @@ sed -i 1d "$STUB_ANSWERS"
 [[ -n $answer ]] || exit 1
 printf "%s\n" "$answer"'
 
+  # Any real Omarchy or desktop command not stubbed above must fail loudly
+  # instead of reaching the real desktop.
+  for cmd in /usr/bin/omarchy-* /usr/bin/hyprctl /usr/bin/notify-send /usr/bin/makoctl; do
+    [[ -e $cmd && ! -e $TEST_ROOT/bin/${cmd##*/} ]] || continue
+    stub "${cmd##*/}" 'echo "UNSTUBBED ${0##*/} $*" >>"$STUB_LOG"; exit 99'
+  done
+
   export PATH="$TEST_ROOT/bin:$REPO/bin:/usr/bin:/bin"
 }
 
 run_tests() {
   local test
+  trap 'rm -rf "${TEST_ROOT:-}"' EXIT
   for test in $(declare -F | awk '$3 ~ /^test_/ { print $3 }'); do
     CURRENT_TEST=$test
     setup_env

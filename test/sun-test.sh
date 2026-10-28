@@ -35,6 +35,35 @@ test_sydney_winter() {
   check_sun Sydney -33.8688 151.2093 2026-06-21 Australia/Sydney "2026-06-20 20:59:55" "2026-06-21 06:53:52"
 }
 
+# Fiji is UTC+12 and east of 178E: sunrise falls on the previous UTC day.
+test_fiji_winter() {
+  check_sun Fiji -18.1416 178.4419 2026-06-21 Pacific/Fiji "2026-06-20 18:36:41" "2026-06-21 05:39:12"
+}
+
+# Runs sun.awk with the given -v assignments; prints "<status>|<stdout>".
+sun_raw() {
+  local out status
+  out=$(gawk "$@" -f "$OMARCHY_THEME_SCHEDULE_LIB/sun.awk" 2>/dev/null)
+  status=$?
+  printf '%s|%s' "$status" "$out"
+}
+
+test_no_variables_is_rejected() {
+  assert_eq "2|" "$(sun_raw)" "no variables"
+}
+
+test_non_numeric_lat_is_rejected() {
+  assert_eq "2|" "$(sun_raw -v lat=abc -v lon=0 -v noon=1782000000)" "lat=abc"
+}
+
+test_out_of_range_lat_is_rejected() {
+  assert_eq "2|" "$(sun_raw -v lat=120 -v lon=0 -v noon=1782000000)" "lat=120"
+}
+
+test_missing_noon_is_rejected() {
+  assert_eq "2|" "$(sun_raw -v lat=51.5 -v lon=-0.1)" "noon missing"
+}
+
 test_tromso_midnight_sun_is_polar() {
   assert_eq polar "$(sun 69.6492 18.9553 2026-06-21 Europe/Oslo)" "no sunset at midsummer"
 }

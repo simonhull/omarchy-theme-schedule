@@ -16,6 +16,14 @@ EOF
   assert_status 0 "binary is executable" test -x "$dest/usr/bin/omarchy-theme-schedule"
 }
 
+test_make_uninstall_removes_everything_install_put_in_place() {
+  local dest="$TEST_ROOT/pkg"
+  make -s -C "$REPO" DESTDIR="$dest" PREFIX=/usr install >/dev/null
+  make -s -C "$REPO" DESTDIR="$dest" PREFIX=/usr uninstall >/dev/null
+  assert_eq "" "$(find "$dest" -type f)" "no files left"
+  assert_eq "" "$(find "$dest" -name 'omarchy-theme-schedule*')" "no package directories left"
+}
+
 test_installed_binary_finds_its_library() {
   local dest="$TEST_ROOT/pkg"
   make -s -C "$REPO" DESTDIR="$dest" PREFIX=/usr install >/dev/null

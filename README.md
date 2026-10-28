@@ -9,8 +9,22 @@ Pick a theme by hand and it stays until the next slot.
 
 ## Install
 
+Either route installs under `/usr`; the paths are fixed.
+
+As a package (tracked by pacman):
+
+    make dist && makepkg -si
+
+`make dist` writes `omarchy-theme-schedule-<version>.tar.gz` from the
+committed tree, and makepkg uses that local file instead of downloading one.
+
+Or straight into the system:
+
     make test
-    sudo make install            # or build the PKGBUILD
+    sudo make install
+
+Then, either way:
+
     omarchy theme schedule setup # adds Appearance › Theme Schedule to the menu
     omarchy theme schedule on
 
@@ -62,8 +76,14 @@ edited and the link is kept.
 
 ## Uninstall
 
+First, as your user:
+
     omarchy theme schedule off && omarchy theme schedule teardown
-    sudo pacman -R omarchy-theme-schedule
+
+Then remove the files the way you installed them:
+
+    sudo pacman -R omarchy-theme-schedule   # after makepkg -si
+    sudo make uninstall                     # after sudo make install
 
 ## For Omarchy core
 

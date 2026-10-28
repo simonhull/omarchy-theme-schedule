@@ -7,8 +7,7 @@ pkgdesc="Switch Omarchy themes on a daily schedule: light at sunrise, dark at su
 arch=('any')
 url="https://github.com/simonhull/omarchy-theme-schedule"
 license=('MIT')
-depends=('omarchy' 'bash' 'jq' 'gawk')
-checkdepends=('perl')
+depends=('omarchy' 'bash' 'jq' 'gawk' 'perl' 'util-linux')
 install=$pkgname.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Replace with the real checksum (updpkgsums) when the v$pkgver tag is published.

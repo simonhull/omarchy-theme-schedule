@@ -6,6 +6,13 @@ post_install() {
 EOF
 }
 
+post_upgrade() {
+  cat <<'EOF'
+==> Re-run as your user so the menu rows update:
+      omarchy theme schedule setup
+EOF
+}
+
 pre_remove() {
   cat <<'EOF'
 ==> Before removing, run as your user:

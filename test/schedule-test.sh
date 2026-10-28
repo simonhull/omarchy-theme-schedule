@@ -165,7 +165,7 @@ test_active_before_first_slot_wraps_to_yesterday() {
   write_schedule "$DAY_NIGHT"
   set_now "2026-10-28 03:00"
   assert_eq night "$(active_theme)" "early morning is last night's slot"
-  assert_eq "2026-10-27T19:00 19:00->night" "$(ts_occurrence_key "$(ts_active "$(ts_now)")")" "yesterday's occurrence"
+  assert_eq "2026-10-27 2:19:00->night" "$(ts_occurrence_key "$(ts_active "$(ts_now)")")" "yesterday's occurrence"
 }
 
 test_file_order_does_not_matter() {
@@ -231,10 +231,10 @@ test_next_switch() {
   assert_eq "day $(epoch "2026-10-29 07:00")" "$(ts_next "$(ts_now)" | awk -F '\t' '{ print $4, $1 }')" "tomorrow morning"
 }
 
-test_occurrence_key_names_day_time_and_slot() {
+test_occurrence_key_names_day_slot_and_theme() {
   write_schedule "$DAY_NIGHT"
   set_now "2026-10-28 12:00"
-  assert_eq "2026-10-28T07:00 07:00->day" "$(ts_occurrence_key "$(ts_active "$(ts_now)")")" "key format"
+  assert_eq "2026-10-28 1:07:00->day" "$(ts_occurrence_key "$(ts_active "$(ts_now)")")" "key format"
 }
 
 test_polar_boundary_day_still_resolves() {

@@ -25,7 +25,7 @@ test_apply_switches_to_the_active_slot() {
   set_now "2026-10-28 12:00"
   cli apply
   assert_eq "theme-set flexoki-light" "$(stub_log)" "switched"
-  assert_eq "2026-10-28T07:00 07:00->flexoki-light" "$(cat "$HOME/.local/state/omarchy/theme-schedule.applied")" "recorded"
+  assert_eq "2026-10-28 1:07:00->flexoki-light" "$(cat "$HOME/.local/state/omarchy/theme-schedule.applied")" "recorded"
 }
 
 test_apply_twice_in_one_slot_switches_once() {
@@ -50,6 +50,22 @@ test_a_manual_pick_holds_until_the_next_slot() {
   set_now "2026-10-28 19:00"
   cli apply
   assert_eq tokyo-night "$(current_theme)" "the next slot switches"
+}
+
+test_a_location_change_does_not_override_a_manual_pick() {
+  add_theme flexoki-light tokyo-night everforest
+  write_schedule '{"slots":[{"at":"sunrise","theme":"flexoki-light"},{"at":"sunset","theme":"tokyo-night"}]}'
+  set_current_theme tokyo-night
+  schedule_on
+  set_now "2026-10-28 12:00"
+  cli apply
+  assert_eq flexoki-light "$(current_theme)" "applied without a location"
+  set_current_theme everforest
+  : >"$STUB_LOG"
+  set_location 51.5072 -0.1276 London
+  cli apply
+  assert_eq everforest "$(current_theme)" "the hand-picked theme stays"
+  assert_eq "" "$(stub_log)" "nothing switched"
 }
 
 test_force_reapplies_the_current_slot() {
@@ -270,7 +286,7 @@ test_a_failed_switch_is_reported_and_recorded() {
   stub omarchy-theme-set 'exit 1'
   assert_status 1 "apply fails" omarchy-theme-schedule apply
   assert_contains "$(stub_log)" "Could not switch to flexoki-light" "notified"
-  assert_eq "2026-10-28T07:00 07:00->flexoki-light" "$(cat "$HOME/.local/state/omarchy/theme-schedule.applied")" "still recorded"
+  assert_eq "2026-10-28 1:07:00->flexoki-light" "$(cat "$HOME/.local/state/omarchy/theme-schedule.applied")" "still recorded"
 }
 
 run_tests

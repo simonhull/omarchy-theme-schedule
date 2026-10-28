@@ -257,11 +257,15 @@ ts_next() {
   ts_occurrences "$1" | awk -F '\t' -v now="$1" '$1 > now { print; exit }'
 }
 
-# Names an occurrence as "<day>T<HH:MM> <at>-><theme>", the form recorded as
-# applied. The day is the slot's own, so the same slot on another day differs.
+# Names an occurrence as "<day> <slot number>:<at>-><theme>", the form
+# recorded as applied. The day is the slot's own, so the same slot on another
+# day differs. The resolved time is left out on purpose: it moves when the
+# location does (weather set, timezone fallback), and that must not re-apply a
+# slot over a theme picked by hand. Editing a slot changes its at, theme or
+# position, so an edit still gets a new key and applies at once.
 ts_occurrence_key() {
-  local epoch day at theme
+  local epoch day at theme number
 
-  IFS=$'\t' read -r epoch day at theme _ <<<"$1"
-  printf '%sT%s %s->%s\n' "$day" "$(date -d "@$epoch" +%H:%M)" "$at" "$theme"
+  IFS=$'\t' read -r epoch day at theme number <<<"$1"
+  printf '%s %s:%s->%s\n' "$day" "$number" "$at" "$theme"
 }

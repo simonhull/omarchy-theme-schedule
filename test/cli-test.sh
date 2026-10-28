@@ -132,4 +132,16 @@ test_t_substitutes_each_argument_once() {
   assert_eq '[a&b] [c\%1d] [a&b]' "$(t k 'a&b' 'c\%1d')" "arguments are taken literally"
 }
 
+test_version_prints_name_and_number() {
+  assert_eq "omarchy-theme-schedule 0.1.1" "$(cli --version)" "--version"
+  assert_eq "omarchy-theme-schedule 0.1.1" "$(cli version)" "version"
+  assert_contains "$(cli --help)" "--version" "usage lists it"
+}
+
+test_version_matches_the_pkgbuild() {
+  local pkgver
+  pkgver=$(sed -n 's/^pkgver=//p' "$REPO/PKGBUILD")
+  assert_eq "omarchy-theme-schedule $pkgver" "$(cli --version)" "bin and PKGBUILD agree"
+}
+
 run_tests

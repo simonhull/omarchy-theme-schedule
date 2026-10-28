@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # omarchy:summary=Switch themes on a daily schedule, such as a light theme at sunrise and a dark one at sunset
-# omarchy:args=[status|apply [--force]|on|off|list|add <at> <theme>|set <n> <at> <theme>|remove <n>|setup|teardown]
+# omarchy:args=[status|apply [--force]|on|off|list|add <at> <theme>|set <n> <at> <theme>|remove <n>|setup|teardown|--version]
 # omarchy:examples=omarchy theme schedule add sunset "Tokyo Night"|omarchy theme schedule add 07:30 flexoki-light|omarchy theme schedule status
 
 source "${OMARCHY_THEME_SCHEDULE_LIB:-/usr/share/omarchy-theme-schedule}/schedule.sh" || exit 1
 
+TS_VERSION=0.1.1
 TS_MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
 TS_MENU_BLOCK="$TS_LIB/menu.jsonc"
 TS_ICON="󰸌"
@@ -97,6 +98,7 @@ Usage: omarchy-theme-schedule <command>
   set <n> <at> <theme>    Replace slot n
   remove <n>              Remove slot n
   setup | teardown        Add or remove Theme Schedule in the Omarchy menu
+  --version               Print the version
 
 <at> is HH:MM, sunrise or sunset, with an optional offset: sunset-30m, sunrise+1h.
 EOF
@@ -618,6 +620,7 @@ main() {
     menu) cmd_menu "${@:2}" ;;
     setup) cmd_setup ;;
     teardown) cmd_teardown ;;
+    --version | version) echo "omarchy-theme-schedule $TS_VERSION" ;;
     -h | --help | help) usage ;;
     *)
       usage >&2

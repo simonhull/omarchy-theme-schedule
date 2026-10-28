@@ -24,6 +24,9 @@ declare -A TS_ENGLISH=(
   [themeSchedule.next]="Next switch: %1 at %2"
   [themeSchedule.invalidAt]="Not a schedule time: %1 (use HH:MM, sunrise or sunset, with an optional offset like sunset-30m)"
   [themeSchedule.unknownTheme]="Theme '%1' is not installed"
+  [themeSchedule.skippedSlot]="Slot %1 is skipped: %2"
+  [themeSchedule.skipMalformed]="it needs an at and a theme"
+  [themeSchedule.skipBadTime]="invalid time %1"
   [themeSchedule.noSuchSlot]="No slot %1"
   [themeSchedule.themeMissing]="Scheduled theme is not installed"
   [themeSchedule.switchFailed]="Could not switch to %1"
@@ -164,16 +167,27 @@ apply_if_on() {
 }
 
 cmd_list() {
-  local slots
+  local slots number kind at theme
 
-  # Every entry keeps its number; a malformed one is shown as invalid, so the
-  # numbers still match what set and remove take.
-  slots=$(jq -r '.slots // [] | if type == "array" then to_entries[] else empty end | .value as $v
+  # Every entry keeps its number; a malformed one, or one whose time is not a
+  # schedule time, is shown as invalid, so the numbers still match what set
+  # and remove take.
+  while IFS=$'\t' read -r number kind at theme; do
+    case $kind in
+      slot)
+        if ts_parse_at "$at" >/dev/null; then
+          slots+="$number  $at  $theme"$'\n'
+        else
+          slots+="$number  (invalid time: $at)"$'\n'
+        fi
+        ;;
+      *) slots+="$number  (invalid: $at)"$'\n' ;;
+    esac
+  done < <(jq -r '.slots // [] | if type == "array" then to_entries[] else empty end | .value as $v
     | if ($v | type) == "object" and ($v.at | type) == "string" and ($v.theme | type) == "string"
-      then "\(.key + 1)  \($v.at)  \($v.theme)"
-      else "\(.key + 1)  (invalid: \($v | tojson))" end' "$TS_CONFIG" 2>/dev/null)
+      then [.key + 1, "slot", $v.at, $v.theme] else [.key + 1, "bad", ($v | tojson)] end | @tsv' "$TS_CONFIG" 2>/dev/null)
   if [[ -n $slots ]]; then
-    echo "$slots"
+    printf '%s' "$slots"
   else
     t themeSchedule.noSlots
   fi
@@ -279,12 +293,14 @@ cmd_on() {
 
   omarchy-toggle theme-schedule on
   if ! systemctl --user enable --now omarchy-theme-schedule.timer >/dev/null 2>&1; then
+    # Toggle and timer always change together: no timer, no toggle.
+    omarchy-toggle theme-schedule off
     t themeSchedule.timerFailed >&2
-    status=1
+    return 1
   fi
 
   # A failed switch has already been reported by apply.
-  cmd_apply --force
+  cmd_apply --force || status=$?
   omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.enabled)" >/dev/null || true
   return "$status"
 }
@@ -313,6 +329,13 @@ cmd_status() {
     polar) t themeSchedule.polar "$TS_FALLBACK_SUNRISE" "$TS_FALLBACK_SUNSET" ;;
     *) t themeSchedule.location "$(ts_location_name)" ;;
   esac
+
+  while IFS=$'\t' read -r number reason at; do
+    case $reason in
+      bad-time) t themeSchedule.skippedSlot "$number" "$(t themeSchedule.skipBadTime "$at")" ;;
+      *) t themeSchedule.skippedSlot "$number" "$(t themeSchedule.skipMalformed)" ;;
+    esac
+  done < <(ts_skipped_slots)
 
   active=$(ts_active "$now")
   if [[ -z $active ]]; then

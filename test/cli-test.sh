@@ -4,6 +4,11 @@ cli() {
   omarchy-theme-schedule "$@" 2>&1
 }
 
+test_list_marks_a_slot_with_an_invalid_time() {
+  write_schedule '{"slots":[{"at":"noon","theme":"a"},{"at":"sunset-30m","theme":"b"}]}'
+  assert_eq $'1  (invalid time: noon)\n2  sunset-30m  b' "$(cli list)" "invalid time shown, numbers kept"
+}
+
 test_list_without_slots() {
   assert_contains "$(cli list)" "No slots" "says there are none"
 }

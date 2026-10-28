@@ -87,8 +87,15 @@ Then remove the files the way you installed them:
 
 ## For Omarchy core
 
-Built to be adopted by moving files: `bin/` into core's `bin/`,
-`lib/theme-schedule/` into `default/`, the menu rows into
-`default/omarchy/omarchy-menu.jsonc` (then `setup`/`teardown` go), the
-`TS_ENGLISH` strings into `default/i18n/en/`, and the units into
-`default/systemd/user/`.
+Adopting this is more than moving files:
+
+- `bin/` goes into core's `bin/`, and the units into `default/systemd/user/`
+  (keep `KillMode=process` and the timeout).
+- The library moves to `$OMARCHY_PATH/default/theme-schedule`; the default for
+  `TS_LIB` becomes that path.
+- The `TS_ENGLISH` table becomes `default/i18n/en/cli.json` entries, and the
+  menu labels become `menu.json` entries.
+- `t()` collapses to a call to `omarchy-i18n`.
+- The menu rows go into `default/omarchy/omarchy-menu.jsonc`, and `setup`,
+  `teardown` and the menu-block helpers are deleted.
+- The tests would need porting to core's test conventions.

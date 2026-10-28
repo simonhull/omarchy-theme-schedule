@@ -211,6 +211,23 @@ ts_slots() {
     | [.key + 1, .value.at, .value.theme] | @tsv' "$TS_CONFIG" 2>/dev/null
 }
 
+# The entries ts_occurrences skips, one "<number>\t<reason>\t<at>" line each:
+# "malformed" for an entry that is not an object with a string at and a
+# non-empty theme, "bad-time" for one whose at is not a schedule time.
+ts_skipped_slots() {
+  local number kind at
+
+  while IFS=$'\t' read -r number kind at; do
+    if [[ $kind == bad ]]; then
+      printf '%s\tmalformed\t\n' "$number"
+    elif ! ts_parse_at "$at" >/dev/null; then
+      printf '%s\tbad-time\t%s\n' "$number" "$at"
+    fi
+  done < <(jq -r '.slots // [] | (if type == "array" then to_entries[] else empty end)
+    | if (.value | type == "object" and (.at | type) == "string" and (.theme | type) == "string" and .theme != "")
+      then [.key + 1, "ok", .value.at] else [.key + 1, "bad", ""] end | @tsv' "$TS_CONFIG" 2>/dev/null)
+}
+
 # Every occurrence from yesterday to tomorrow as
 # "<epoch>\t<day>\t<at>\t<theme>\t<slot number>", in time order. Yesterday is
 # there so the hours before today's first slot belong to last night's; a

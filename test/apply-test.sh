@@ -160,6 +160,17 @@ test_status_shows_today_and_next() {
   assert_contains "$out" "Next switch: tokyo-night at Mon 15:5" "next switch"
 }
 
+test_status_reports_skipped_slots() {
+  local out
+  add_theme flexoki-light
+  write_schedule '{"slots":[{"at":"07:00","theme":"flexoki-light"},"junk",{"at":"noon","theme":"flexoki-light"}]}'
+  out=$(cli status)
+  assert_contains "$out" "Slot 2 is skipped: " "type-invalid slot"
+  assert_contains "$out" "Slot 3 is skipped: " "bad time"
+  assert_contains "$out" "noon" "bad time named"
+  assert_not_contains "$out" "Slot 1 is skipped" "valid slot not reported"
+}
+
 test_status_is_the_default_command() {
   assert_contains "$(cli)" "Theme schedule: off" "no arguments shows status"
 }
@@ -186,12 +197,20 @@ test_on_and_off_exit_cleanly_when_notifications_fail() {
   assert_status 0 "off" omarchy-theme-schedule off
 }
 
-test_on_reports_a_failed_timer_but_carries_on() {
+test_on_reports_a_failed_timer_and_turns_back_off() {
   given_day_night
   stub systemctl 'exit 1'
   assert_status 1 "on exits 1" omarchy-theme-schedule on
   assert_contains "$(cli on)" "Could not start the schedule timer" "explains"
-  assert_status 0 "toggle stays on" omarchy-toggle-enabled theme-schedule
+  assert_status 1 "toggle goes back off" omarchy-toggle-enabled theme-schedule
+}
+
+test_on_does_not_switch_when_the_timer_fails() {
+  given_day_night
+  stub systemctl 'exit 1'
+  set_now "2026-10-28 12:00"
+  cli on >/dev/null
+  assert_not_contains "$(stub_log)" "theme-set" "no switch without a timer"
 }
 
 test_off_exits_cleanly_when_the_timer_cannot_stop() {

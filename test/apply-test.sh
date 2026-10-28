@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 DAY_NIGHT='{"slots":[{"at":"07:00","theme":"flexoki-light"},{"at":"19:00","theme":"tokyo-night"}]}'

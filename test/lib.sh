@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Test harness for omarchy-theme-schedule. Every test gets a throwaway HOME
 # and OMARCHY_PATH, and stubs for each Omarchy command the code calls, so no
 # test can change the real desktop. A *-test.sh sources this, defines test_*

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 # Prints "<rise> <set>" epochs, or "polar".

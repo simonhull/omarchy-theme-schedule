@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 test_make_install_lays_out_the_package() {

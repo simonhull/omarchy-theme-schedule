@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # The logic behind omarchy-theme-schedule: reading the schedule and working
 # out when each slot falls. Sourced, never run, and it changes nothing; it only
 # answers "which slot is active now, and which comes next".

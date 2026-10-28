@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 test_theme_set_stub_records_and_switches() {

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 # install.sh runs against stubs: curl copies fixtures, makepkg fakes the

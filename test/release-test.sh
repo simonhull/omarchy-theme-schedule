@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 
 # tools/release.sh runs in a throwaway clone whose only remote is a local bare

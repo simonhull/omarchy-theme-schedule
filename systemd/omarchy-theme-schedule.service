@@ -6,3 +6,13 @@ After=graphical-session.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/omarchy-theme-schedule apply
+# omarchy-theme-set, when stdin is not a terminal, sends half its work to the
+# background: GTK mode, browser and editor retints, hooks, and the background
+# intro with its Hyprland reload. The default KillMode=control-group would kill
+# all of that the moment apply exits, so only the main process is tracked.
+KillMode=process
+# A oneshot unit has no start timeout by default; without one a hung switch
+# would block the schedule for good.
+TimeoutStartSec=2min
+# Once a minute, Starting/Finished lines alone would be 2,880 journal entries a day.
+LogLevelMax=notice

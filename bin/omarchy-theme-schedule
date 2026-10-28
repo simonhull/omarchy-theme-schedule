@@ -221,7 +221,9 @@ cmd_apply() {
   # decides and records; the others then see the record and do nothing, so a
   # slot is never switched twice. Everything below reads state under the lock.
   exec 9>"${XDG_RUNTIME_DIR:-/tmp}/omarchy-theme-schedule.lock"
-  flock 9
+  # A hung switch must not stall the schedule for good, so the wait is bounded.
+  # Giving up is safe: another run holds the lock; it will apply.
+  flock -w "${OMARCHY_THEME_SCHEDULE_LOCK_WAIT:-60}" 9 || return 0
 
   active=$(ts_active "$(ts_now)")
   [[ -n $active ]] || return 0

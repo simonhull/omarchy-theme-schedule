@@ -194,6 +194,18 @@ test_off_exits_cleanly_when_the_timer_cannot_stop() {
   assert_status 0 "off" omarchy-theme-schedule off
 }
 
+test_apply_gives_up_quietly_when_another_run_holds_the_lock() {
+  given_day_night
+  schedule_on
+  set_now "2026-10-28 12:00"
+  exec 8>"$XDG_RUNTIME_DIR/omarchy-theme-schedule.lock"
+  flock 8
+  OMARCHY_THEME_SCHEDULE_LOCK_WAIT=1 omarchy-theme-schedule apply >/dev/null 2>&1
+  assert_eq 0 "$?" "exits 0"
+  exec 8>&-
+  assert_eq "" "$(stub_log)" "no switch"
+}
+
 test_force_does_nothing_while_off() {
   given_day_night
   set_now "2026-10-28 12:00"

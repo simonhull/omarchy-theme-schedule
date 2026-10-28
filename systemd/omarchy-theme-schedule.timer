@@ -1,6 +1,7 @@
 # Every minute, because each run works the active slot out afresh: suspend,
 # DST, a new timezone or an edited schedule need nothing special. A run whose
-# slot has not changed reads two files and exits.
+# slot has not changed still works out today's occurrences and compares them
+# with the last applied one, then exits.
 [Unit]
 Description=Check the Omarchy theme schedule every minute
 PartOf=graphical-session.target

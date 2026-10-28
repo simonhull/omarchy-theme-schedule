@@ -189,8 +189,114 @@ cmd_remove() {
   apply_if_on
 }
 
+cmd_apply() {
+  local force=false active key theme
+
+  [[ ${1:-} == --force ]] && force=true
+  omarchy-toggle-enabled theme-schedule || return 0
+
+  active=$(ts_active "$(ts_now)")
+  [[ -n $active ]] || return 0
+  key=$(ts_occurrence_key "$active")
+  theme=$(cut -f4 <<<"$active")
+
+  # A slot already applied stays applied whatever the theme is now: that is
+  # what lets a theme picked by hand hold until the next slot.
+  if [[ $force == false && $(cat "$TS_APPLIED" 2>/dev/null) == "$key" ]]; then
+    return 0
+  fi
+
+  if ! ts_theme_installed "$theme"; then
+    omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.themeMissing)" \
+      "$(t themeSchedule.themeMissingBody "$theme")" >/dev/null
+  elif [[ $(ts_current_theme) != "$theme" ]]; then
+    omarchy-theme-set "$theme"
+  fi
+
+  mkdir -p "${TS_APPLIED%/*}"
+  printf '%s\n' "$key" >"$TS_APPLIED"
+}
+
+# A first schedule from the current theme: it keeps its place by day or by
+# night, whichever its mode suits, and a stock theme takes the other.
+seed_config() {
+  local current day=flexoki-light night=tokyo-night
+
+  current=$(ts_current_theme)
+  if [[ -n $current ]]; then
+    if [[ $(omarchy-theme-color mode 2>/dev/null) == light ]]; then
+      day=$current
+    else
+      night=$current
+    fi
+  fi
+
+  ts_update_config --arg day "$day" --arg night "$night" \
+    '.slots = [{at: "sunrise", theme: $day}, {at: "sunset", theme: $night}]'
+}
+
+cmd_on() {
+  [[ -f $TS_CONFIG ]] || seed_config || return 1
+
+  omarchy-toggle theme-schedule on
+  if ! systemctl --user enable --now omarchy-theme-schedule.timer >/dev/null 2>&1; then
+    t themeSchedule.timerFailed >&2
+  fi
+
+  cmd_apply --force
+  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.enabled)" >/dev/null
+}
+
+cmd_off() {
+  omarchy-toggle theme-schedule off
+  systemctl --user disable --now omarchy-theme-schedule.timer >/dev/null 2>&1
+  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.disabled)" >/dev/null
+}
+
+cmd_status() {
+  local now today active active_number next epoch day at theme number marker
+
+  now=$(ts_now)
+  today=$(date -d "@$now" +%F)
+
+  if omarchy-toggle-enabled theme-schedule; then
+    t themeSchedule.statusOn
+  else
+    t themeSchedule.statusOff
+  fi
+
+  case $(ts_sun_fallback "$today") in
+    no-location) t themeSchedule.noLocation "$TS_FALLBACK_SUNRISE" "$TS_FALLBACK_SUNSET" ;;
+    polar) t themeSchedule.polar "$TS_FALLBACK_SUNRISE" "$TS_FALLBACK_SUNSET" ;;
+    *) t themeSchedule.location "$(ts_location_name)" ;;
+  esac
+
+  active=$(ts_active "$now")
+  if [[ -z $active ]]; then
+    t themeSchedule.noSlots
+    return 0
+  fi
+  active_number=$(cut -f5 <<<"$active")
+
+  while IFS=$'\t' read -r epoch day at theme number; do
+    marker=""
+    [[ $number == "$active_number" ]] && marker="  ($(t themeSchedule.active))"
+    printf '  %s  %-12s %s  %s%s\n' "$number" "$at" "$(date -d "@$epoch" +%H:%M)" "$theme" "$marker"
+  done < <(ts_occurrences "$now" | awk -F '\t' -v today="$today" '$2 == today')
+
+  next=$(ts_next "$now")
+  if [[ -n $next ]]; then
+    IFS=$'\t' read -r epoch day at theme number <<<"$next"
+    t themeSchedule.next "$theme" "$(date -d "@$epoch" '+%a %H:%M')"
+  fi
+}
+
 main() {
   case ${1:-status} in
+    status) cmd_status ;;
+    apply) cmd_apply "${@:2}" ;;
+    on) cmd_on ;;
+    off) cmd_off ;;
     list) cmd_list ;;
     add) cmd_add "${@:2}" ;;
     set) cmd_set "${@:2}" ;;

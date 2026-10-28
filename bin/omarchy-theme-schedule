@@ -41,6 +41,8 @@ declare -A TS_ENGLISH=(
   [themeSchedule.menuBlockDamaged]="%1 has an unfinished theme-schedule block; fix or remove it by hand"
   [themeSchedule.menuItemsWrapper]="%1 wraps its rows in \"items\"; add the theme schedule rows inside it by hand"
   [themeSchedule.menuFailed]="Theme schedule not changed"
+  [themeSchedule.updateTitle]="Theme Schedule %1 is available"
+  [themeSchedule.updateBody]="Update it from the Omarchy menu (Update › Theme Schedule) or run: omarchy theme schedule update"
   [themeSchedule.menuSlots]="Theme schedule"
   [themeSchedule.menuSlotAction]="Slot"
   [themeSchedule.menuChangeTime]="Change time"
@@ -466,6 +468,74 @@ cmd_teardown() {
   t themeSchedule.teardownDone
 }
 
+# check-update [--notify|--cached] is a hidden helper (kept out of the usage
+# text) for the post-update hook and the menu's `when` conditions. It prints:
+#   latest             this version is the newest release
+#   available <ver>   a newer release exists
+#   (nothing)          the remote could not be read, or there is no cache yet
+# and always exits 0, so a hook running it can never break `omarchy update`.
+# Releases are git tags vX.Y.Z; `git ls-remote` reads them without the GitHub
+# API's rate limits. The newest tag is cached in
+# ${XDG_CACHE_HOME:-~/.cache}/omarchy-theme-schedule/latest.
+#   --cached   only read the cache, with no network call (cheap enough for a
+#              menu `when`)
+#   --notify   when a version newer than the last one notified about exists,
+#              send one notification and record it in the cache dir ("notified")
+ts_cache_dir() {
+  echo "${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-theme-schedule"
+}
+
+# Prints the newest vX.Y.Z tag at the remote, without the v; nothing when the
+# remote is unreachable or has no such tag.
+ts_latest_release() {
+  local remote=${OMARCHY_THEME_SCHEDULE_REMOTE:-https://github.com/simonhull/omarchy-theme-schedule}
+
+  GIT_TERMINAL_PROMPT=0 timeout "${OMARCHY_THEME_SCHEDULE_CHECK_TIMEOUT:-10}" \
+    git ls-remote --tags --refs "$remote" 2>/dev/null \
+    | sed -nE 's|^[0-9a-f]+[[:space:]]+refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$|\1|p' \
+    | sort -V | tail -n 1
+}
+
+# Prints the verdict for a latest version, or nothing for a malformed one.
+ts_update_verdict() {
+  local latest=$1 newest
+
+  [[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  newest=$(printf '%s\n%s\n' "$TS_VERSION" "$latest" | sort -V | tail -n 1)
+  if [[ $latest != "$TS_VERSION" && $newest == "$latest" ]]; then
+    echo "available $latest"
+  else
+    echo latest
+  fi
+}
+
+cmd_check_update() {
+  local mode=${1:-} dir latest tmp verdict
+
+  dir=$(ts_cache_dir)
+
+  if [[ $mode == --cached ]]; then
+    ts_update_verdict "$(cat "$dir/latest" 2>/dev/null)"
+    return 0
+  fi
+
+  latest=$(ts_latest_release)
+  verdict=$(ts_update_verdict "$latest")
+  [[ -n $verdict ]] || return 0
+
+  if mkdir -p "$dir" && tmp=$(mktemp "$dir/latest.XXXXXX"); then
+    printf '%s\n' "$latest" >"$tmp" && mv "$tmp" "$dir/latest" || rm -f "$tmp"
+  fi
+  echo "$verdict"
+
+  if [[ $mode == --notify && $verdict == available* && $(cat "$dir/notified" 2>/dev/null) != "$latest" ]]; then
+    omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.updateTitle "$latest")" \
+      "$(t themeSchedule.updateBody)" >/dev/null || true
+    printf '%s\n' "$latest" >"$dir/notified"
+  fi
+  return 0
+}
+
 pretty_theme() {
   sed -E 's/-/ /g; s/\b(.)/\u\1/g' <<<"$1"
 }
@@ -620,6 +690,7 @@ main() {
     menu) cmd_menu "${@:2}" ;;
     setup) cmd_setup ;;
     teardown) cmd_teardown ;;
+    check-update) cmd_check_update "${@:2}" ;;
     --version | version) echo "omarchy-theme-schedule $TS_VERSION" ;;
     -h | --help | help) usage ;;
     *)

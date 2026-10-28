@@ -172,4 +172,67 @@ test_a_malformed_middle_entry_keeps_slot_numbers() {
   assert_not_contains "$out" "flexoki-light  (active)" "slot 1 is not"
 }
 
+test_on_and_off_exit_cleanly_when_notifications_fail() {
+  given_day_night
+  stub omarchy-notification-send 'exit 1'
+  assert_status 0 "on" omarchy-theme-schedule on
+  assert_status 0 "off" omarchy-theme-schedule off
+}
+
+test_on_reports_a_failed_timer_but_carries_on() {
+  given_day_night
+  stub systemctl 'exit 1'
+  assert_status 1 "on exits 1" omarchy-theme-schedule on
+  assert_contains "$(cli on)" "Could not start the schedule timer" "explains"
+  assert_status 0 "toggle stays on" omarchy-toggle-enabled theme-schedule
+}
+
+test_off_exits_cleanly_when_the_timer_cannot_stop() {
+  given_day_night
+  schedule_on
+  stub systemctl 'exit 1'
+  assert_status 0 "off" omarchy-theme-schedule off
+}
+
+test_force_does_nothing_while_off() {
+  given_day_night
+  set_now "2026-10-28 12:00"
+  cli apply --force
+  assert_eq "" "$(stub_log)" "nothing happens"
+}
+
+test_on_reapplies_over_a_hand_picked_theme() {
+  given_day_night
+  set_now "2026-10-28 12:00"
+  cli on
+  cli apply
+  set_current_theme everforest
+  cli off
+  cli on
+  assert_eq flexoki-light "$(current_theme)" "the slot's theme is back"
+}
+
+test_concurrent_applies_switch_once() {
+  given_day_night
+  schedule_on
+  set_now "2026-10-28 12:00"
+  stub omarchy-theme-set 'sleep 0.3
+echo "theme-set $1" >>"$STUB_LOG"
+echo "$1" >"$HOME/.local/state/omarchy/current/theme.name"'
+  omarchy-theme-schedule apply &
+  omarchy-theme-schedule apply &
+  wait
+  assert_eq 1 "$(count_in_log theme-set)" "one switch"
+}
+
+test_a_failed_switch_is_reported_and_recorded() {
+  given_day_night
+  schedule_on
+  set_now "2026-10-28 12:00"
+  stub omarchy-theme-set 'exit 1'
+  assert_status 1 "apply fails" omarchy-theme-schedule apply
+  assert_contains "$(stub_log)" "Could not switch to flexoki-light" "notified"
+  assert_eq "2026-10-28T07:00 07:00->flexoki-light" "$(cat "$HOME/.local/state/omarchy/theme-schedule.applied")" "still recorded"
+}
+
 run_tests

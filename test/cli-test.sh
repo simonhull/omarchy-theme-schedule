@@ -47,7 +47,11 @@ test_slot_numbers_are_checked() {
   assert_status 1 "past the end" omarchy-theme-schedule remove 5
   assert_contains "$(cli remove 5)" "No slot 5" "explains"
   assert_status 1 "not a number" omarchy-theme-schedule remove abc
+  add_theme a
   assert_status 1 "zero" omarchy-theme-schedule set 0 07:00 a
+  assert_contains "$(cli set 0 07:00 a)" "No slot 0" "set 0 explains"
+  assert_status 1 "remove zero" omarchy-theme-schedule remove 0
+  assert_contains "$(cli remove 0)" "No slot 0" "remove 0 explains"
 }
 
 test_wrong_arguments_print_usage() {
@@ -61,6 +65,66 @@ test_editing_while_off_does_not_switch() {
   add_theme tokyo-night
   omarchy-theme-schedule add sunset tokyo-night
   assert_eq "" "$(stub_log)" "no theme-set, no notification"
+}
+
+test_list_shows_every_entry() {
+  write_schedule '{"slots":[{"at":"sunrise","theme":"a"},"junk",{"at":"sunset"},{"theme":"b"}]}'
+  assert_eq $'1  sunrise  a\n2  (invalid: "junk")\n3  (invalid: {"at":"sunset"})\n4  (invalid: {"theme":"b"})' "$(cli list)" "malformed entries keep their numbers"
+}
+
+test_an_empty_config_does_not_swallow_edits() {
+  add_theme tokyo-night
+  : >"$HOME/.local/state/omarchy/settings/theme-schedule.json"
+  assert_status 0 "add" omarchy-theme-schedule add sunset tokyo-night
+  assert_eq '[{"at":"sunset","theme":"tokyo-night"}]' "$(read_schedule)" "stored"
+  printf '  \n' >"$HOME/.local/state/omarchy/settings/theme-schedule.json"
+  assert_status 0 "add over whitespace" omarchy-theme-schedule add sunrise tokyo-night
+  assert_eq '[{"at":"sunrise","theme":"tokyo-night"}]' "$(read_schedule)" "stored over whitespace"
+}
+
+test_edits_keep_file_permissions() {
+  add_theme tokyo-night
+  write_schedule '{"slots":[]}'
+  chmod 644 "$HOME/.local/state/omarchy/settings/theme-schedule.json"
+  omarchy-theme-schedule add sunset tokyo-night
+  assert_eq 644 "$(stat -c %a "$HOME/.local/state/omarchy/settings/theme-schedule.json")" "mode kept"
+}
+
+test_add_and_remove_apply_at_once_while_on() {
+  add_theme flexoki-light tokyo-night
+  schedule_on
+  set_now "2026-10-28 12:00"
+  set_current_theme tokyo-night
+  omarchy-theme-schedule add 07:00 flexoki-light
+  assert_eq flexoki-light "$(current_theme)" "add applies"
+  write_schedule '{"slots":[{"at":"07:00","theme":"flexoki-light"},{"at":"08:00","theme":"tokyo-night"}]}'
+  set_current_theme flexoki-light
+  omarchy-theme-schedule remove 2
+  assert_eq flexoki-light "$(current_theme)" "remove leaves the earlier slot active"
+  set_current_theme tokyo-night
+  omarchy-theme-schedule remove 1
+  assert_eq tokyo-night "$(current_theme)" "no slots, nothing to apply"
+  write_schedule '{"slots":[{"at":"07:00","theme":"flexoki-light"},{"at":"08:00","theme":"tokyo-night"}]}'
+  set_current_theme flexoki-light
+  omarchy-theme-schedule remove 2
+  assert_eq flexoki-light "$(current_theme)" "stays"
+}
+
+test_set_normalises_and_rejects_themes() {
+  add_theme tokyo-night
+  write_schedule '{"slots":[{"at":"sunrise","theme":"a"}]}'
+  assert_status 0 "set" omarchy-theme-schedule set 1 sunset "Tokyo Night"
+  assert_eq '[{"at":"sunset","theme":"tokyo-night"}]' "$(read_schedule)" "normalised"
+  assert_status 1 "unknown theme" omarchy-theme-schedule set 1 sunset nope
+  assert_contains "$(cli set 1 sunset nope)" "Theme 'nope' is not installed" "explains"
+  assert_eq '[{"at":"sunset","theme":"tokyo-night"}]' "$(read_schedule)" "unchanged"
+}
+
+test_t_substitutes_each_argument_once() {
+  local TS_ENGLISH
+  declare -A TS_ENGLISH=([k]="[%1] [%2] [%1]")
+  eval "$(sed -n '/^t() {/,/^}/p' "$REPO/bin/omarchy-theme-schedule")"
+  assert_eq '[a&b] [c\%1d] [a&b]' "$(t k 'a&b' 'c\%1d')" "arguments are taken literally"
 }
 
 run_tests

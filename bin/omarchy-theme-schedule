@@ -26,6 +26,7 @@ declare -A TS_ENGLISH=(
   [themeSchedule.unknownTheme]="Theme '%1' is not installed"
   [themeSchedule.noSuchSlot]="No slot %1"
   [themeSchedule.themeMissing]="Scheduled theme is not installed"
+  [themeSchedule.switchFailed]="Could not switch to %1"
   [themeSchedule.themeMissingBody]="Skipped %1. The schedule carries on at the next slot."
   [themeSchedule.timerFailed]="Could not start the schedule timer. See: systemctl --user status omarchy-theme-schedule.timer"
   [themeSchedule.enabled]="Theme schedule on"
@@ -55,17 +56,25 @@ declare -A TS_ENGLISH=(
 
 # A user-facing string in the current language, with %1-style arguments.
 t() {
-  local key=$1 text token i
+  local key=$1 text out="" n
   shift
 
   text=$(omarchy-i18n "$key" "$@" 2>/dev/null)
   if [[ -z $text || $text == "$key" ]]; then
     text=${TS_ENGLISH[$key]:-$key}
-    # Highest first, so %1 never eats the start of %10.
-    for ((i = $#; i >= 1; i--)); do
-      token="%$i"
-      text=${text//"$token"/"${!i}"}
+    # One pass over the template, so an argument that itself contains %1 is
+    # never substituted again.
+    while [[ $text =~ ^([^%]*)%([0-9]+)(.*)$ ]]; do
+      out+=${BASH_REMATCH[1]}
+      n=${BASH_REMATCH[2]}
+      text=${BASH_REMATCH[3]}
+      if ((n >= 1 && n <= $#)); then
+        out+=${!n}
+      else
+        out+="%$n"
+      fi
     done
+    text=$out$text
   fi
 
   printf '%s\n' "$text"
@@ -92,11 +101,16 @@ EOF
 ts_update_config() {
   local current tmp
 
-  current=$(cat "$TS_CONFIG" 2>/dev/null || echo '{"slots": []}')
+  current=$(cat "$TS_CONFIG" 2>/dev/null)
+  # A missing, empty or blank file is an empty schedule, not a jq error.
+  [[ $current =~ [^[:space:]] ]] || current='{"slots": []}'
   mkdir -p "${TS_CONFIG%/*}"
   tmp=$(mktemp "$TS_CONFIG.XXXXXX") || return 1
 
-  if jq "$@" <<<"$current" >"$tmp"; then
+  # Never replace the schedule with nothing.
+  if jq "$@" <<<"$current" >"$tmp" && [[ -s $tmp ]]; then
+    # mktemp makes the file private; keep the mode the config had.
+    chmod --reference="$TS_CONFIG" "$tmp" 2>/dev/null || chmod 644 "$tmp"
     mv "$tmp" "$TS_CONFIG"
   else
     rm -f "$tmp"
@@ -108,6 +122,7 @@ slot_count() {
   jq '.slots // [] | length' "$TS_CONFIG" 2>/dev/null || echo 0
 }
 
+# Not used by the CLI itself: Task 8's menu helpers read slot fields with it.
 slot_field() {
   jq -r --argjson index "$(($1 - 1))" --arg field "$2" '.slots[$index][$field]' "$TS_CONFIG"
 }
@@ -149,7 +164,12 @@ apply_if_on() {
 cmd_list() {
   local slots
 
-  slots=$(jq -r '.slots // [] | to_entries[] | "\(.key + 1)  \(.value.at)  \(.value.theme)"' "$TS_CONFIG" 2>/dev/null)
+  # Every entry keeps its number; a malformed one is shown as invalid, so the
+  # numbers still match what set and remove take.
+  slots=$(jq -r '.slots // [] | if type == "array" then to_entries[] else empty end | .value as $v
+    | if ($v | type) == "object" and ($v.at | type) == "string" and ($v.theme | type) == "string"
+      then "\(.key + 1)  \($v.at)  \($v.theme)"
+      else "\(.key + 1)  (invalid: \($v | tojson))" end' "$TS_CONFIG" 2>/dev/null)
   if [[ -n $slots ]]; then
     echo "$slots"
   else
@@ -190,10 +210,16 @@ cmd_remove() {
 }
 
 cmd_apply() {
-  local force=false active key theme
+  local force=false active key theme status=0 tmp
 
   [[ ${1:-} == --force ]] && force=true
   omarchy-toggle-enabled theme-schedule || return 0
+
+  # Runs can overlap (the timer, plus on or the menu). Whoever holds the lock
+  # decides and records; the others then see the record and do nothing, so a
+  # slot is never switched twice. Everything below reads state under the lock.
+  exec 9>"${XDG_RUNTIME_DIR:-/tmp}/omarchy-theme-schedule.lock"
+  flock 9
 
   active=$(ts_active "$(ts_now)")
   [[ -n $active ]] || return 0
@@ -210,11 +236,17 @@ cmd_apply() {
     omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.themeMissing)" \
       "$(t themeSchedule.themeMissingBody "$theme")" >/dev/null
   elif [[ $(ts_current_theme) != "$theme" ]]; then
-    omarchy-theme-set "$theme"
+    if ! omarchy-theme-set "$theme"; then
+      # Recorded anyway: retrying every minute would only repeat the failure.
+      omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.switchFailed "$theme")" >/dev/null
+      status=1
+    fi
   fi
 
   mkdir -p "${TS_APPLIED%/*}"
-  printf '%s\n' "$key" >"$TS_APPLIED"
+  tmp=$(mktemp "$TS_APPLIED.XXXXXX") || return 1
+  printf '%s\n' "$key" >"$tmp" && mv "$tmp" "$TS_APPLIED" || { rm -f "$tmp"; return 1; }
+  return "$status"
 }
 
 # A first schedule from the current theme: it keeps its place by day or by
@@ -236,21 +268,27 @@ seed_config() {
 }
 
 cmd_on() {
+  local status=0
+
   [[ -f $TS_CONFIG ]] || seed_config || return 1
 
   omarchy-toggle theme-schedule on
   if ! systemctl --user enable --now omarchy-theme-schedule.timer >/dev/null 2>&1; then
     t themeSchedule.timerFailed >&2
+    status=1
   fi
 
+  # A failed switch has already been reported by apply.
   cmd_apply --force
-  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.enabled)" >/dev/null
+  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.enabled)" >/dev/null || true
+  return "$status"
 }
 
 cmd_off() {
   omarchy-toggle theme-schedule off
   systemctl --user disable --now omarchy-theme-schedule.timer >/dev/null 2>&1
-  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.disabled)" >/dev/null
+  omarchy-notification-send -g "$TS_ICON" "$(t themeSchedule.disabled)" >/dev/null || true
+  return 0
 }
 
 cmd_status() {

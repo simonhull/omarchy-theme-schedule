@@ -60,6 +60,71 @@ test_sun_event_with_null_coordinates_falls_back() {
   assert_eq no-location "$(ts_sun_fallback 2026-06-21)" "null coordinates are no location"
 }
 
+ZONE_ROWS=(
+  $'CA\t+5333-11328\tAmerica/Edmonton\tCST - AB, BC(E), NT(E), SK(W)'
+  $'GB,GG,IM,JE\t+513030-0000731\tEurope/London'
+  $'AU\t-3352+15113\tAustralia/Sydney\tNew South Wales'
+)
+
+test_timezone_location_parses_degrees_and_minutes() {
+  export TZ=America/Edmonton
+  set_zone_tab "${ZONE_ROWS[@]}"
+  assert_eq "53.5500 -113.4667" "$(ts_location)" "Edmonton"
+  assert_eq timezone "$(ts_location_source)" "source"
+  assert_eq "America/Edmonton (from your timezone)" "$(ts_location_name)" "name"
+}
+
+test_timezone_location_parses_degrees_minutes_and_seconds() {
+  export TZ=Europe/London
+  set_zone_tab "${ZONE_ROWS[@]}"
+  assert_eq "51.5083 -0.1253" "$(ts_location)" "London"
+  export TZ=Australia/Sydney
+  assert_eq "-33.8667 151.2167" "$(ts_location)" "Sydney, southern and eastern signs"
+}
+
+test_timezone_sunrise_comes_from_the_zone_location() {
+  export TZ=America/Edmonton
+  set_zone_tab "${ZONE_ROWS[@]}"
+  assert_within "$(ts_sun_event 2026-10-28 sunrise)" "$(epoch "2026-10-28 08:25")" 5 "Edmonton sunrise"
+  assert_eq "" "$(ts_sun_fallback 2026-10-28)" "not a fallback"
+}
+
+test_weather_location_beats_the_timezone() {
+  export TZ=America/Edmonton
+  set_zone_tab "${ZONE_ROWS[@]}"
+  set_location 51.5072 -0.1276 London
+  assert_eq "51.5072 -0.1276" "$(ts_location)" "weather wins"
+  assert_eq weather "$(ts_location_source)" "source"
+  assert_eq London "$(ts_location_name)" "name"
+}
+
+test_weather_file_without_coordinates_falls_to_the_timezone() {
+  export TZ=America/Edmonton
+  set_zone_tab "${ZONE_ROWS[@]}"
+  printf '{"name":"Malibu"}\n' >"$HOME/.local/state/omarchy/settings/weather.json"
+  assert_eq timezone "$(ts_location_source)" "source"
+}
+
+test_a_zone_missing_from_the_table_has_no_location() {
+  export TZ=UTC
+  set_zone_tab "${ZONE_ROWS[@]}"
+  assert_eq no-location "$(ts_sun_fallback 2026-10-28)" "reason"
+  assert_eq "" "$(ts_location_source)" "no source"
+  assert_status 1 "ts_location fails" ts_location
+}
+
+test_zone_comes_from_etc_localtime_when_tz_is_unset_or_a_path() {
+  local zone
+  set_zone_tab "${ZONE_ROWS[@]}"
+  [[ -e /usr/share/zoneinfo/Europe/London ]] || return 0
+  unset TZ
+  zone=$(readlink -f /etc/localtime)
+  [[ $zone == */zoneinfo/* ]] || return 0
+  assert_eq "${zone##*/zoneinfo/}" "$(ts_zone_name)" "from /etc/localtime"
+  export TZ=/usr/share/zoneinfo/Europe/London
+  assert_eq "${zone##*/zoneinfo/}" "$(ts_zone_name)" "a path in TZ is ignored"
+}
+
 test_sun_event_on_a_polar_day_falls_back() {
   export TZ=Europe/Oslo
   set_location 69.6492 18.9553 Tromsø

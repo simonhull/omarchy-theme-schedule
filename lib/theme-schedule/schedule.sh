@@ -70,8 +70,8 @@ ts_clock_epoch() {
   echo $(($(date -d "$day 12:00" +%s) + (hours * 60 + minutes - 720) * 60))
 }
 
-# The weather panel's location as "<lat> <lon>"; fails when none is set.
-ts_location() {
+# The weather panel's coordinates as "<lat> <lon>"; fails when none are set.
+ts_weather_location() {
   local lat lon
 
   read -r lat lon < <(jq -r '"\(.latitude) \(.longitude)"' "$TS_WEATHER" 2>/dev/null) || return 1
@@ -79,8 +79,68 @@ ts_location() {
   echo "$lat $lon"
 }
 
+# The local timezone's name: $TZ when it is set and is not a path, otherwise
+# what /etc/localtime points at, less everything up to "/zoneinfo/".
+ts_zone_name() {
+  local zone=${TZ:-} link
+
+  zone=${zone#:}
+  if [[ -n $zone && $zone != /* ]]; then
+    echo "$zone"
+    return
+  fi
+
+  link=$(readlink -f /etc/localtime 2>/dev/null) || return 1
+  [[ $link == */zoneinfo/* ]] || return 1
+  echo "${link##*/zoneinfo/}"
+}
+
+# The local timezone's coordinates as "<lat> <lon>", from zone1970.tab, whose
+# second column is ISO 6709: +-DDMM+-DDDMM or +-DDMMSS+-DDDMMSS. Fails when the
+# zone has no row (UTC, for one).
+ts_zone_location() {
+  local zone tab location
+
+  zone=$(ts_zone_name) || return 1
+  tab=${OMARCHY_THEME_SCHEDULE_ZONE_TAB:-/usr/share/zoneinfo/zone1970.tab}
+  location=$(awk -F '\t' -v zone="$zone" '
+    function degrees(part, deg_digits,   sign, digits) {
+      sign = (substr(part, 1, 1) == "-") ? -1 : 1
+      digits = substr(part, 2)
+      return sign * (substr(digits, 1, deg_digits) + substr(digits, deg_digits + 1, 2) / 60 + (substr(digits, deg_digits + 3, 2) + 0) / 3600)
+    }
+    $0 !~ /^#/ && $3 == zone {
+      split_at = match(substr($2, 2), /[+-]/)
+      if (split_at == 0) exit
+      lat = substr($2, 1, split_at)
+      lon = substr($2, split_at + 1)
+      printf "%.4f %.4f\n", degrees(lat, 2), degrees(lon, 3)
+      exit
+    }' "$tab" 2>/dev/null) || return 1
+  [[ -n $location ]] || return 1
+  echo "$location"
+}
+
+# Where the coordinates come from: "weather", "timezone", or nothing.
+ts_location_source() {
+  if ts_weather_location >/dev/null; then
+    echo weather
+  elif ts_zone_location >/dev/null; then
+    echo timezone
+  fi
+}
+
+# The location's coordinates as "<lat> <lon>": the weather panel's if it has
+# any, else the timezone's. Fails when neither does.
+ts_location() {
+  ts_weather_location || ts_zone_location
+}
+
 ts_location_name() {
-  jq -r 'if (.name // "") != "" then .name else "\(.latitude), \(.longitude)" end' "$TS_WEATHER" 2>/dev/null
+  case $(ts_location_source) in
+    weather) jq -r 'if (.name // "") != "" then .name else "\(.latitude), \(.longitude)" end' "$TS_WEATHER" 2>/dev/null ;;
+    timezone) echo "$(ts_zone_name) (from your timezone)" ;;
+  esac
 }
 
 # Prints "<rise> <set>" epochs for a day, "polar", or "none" without a location.

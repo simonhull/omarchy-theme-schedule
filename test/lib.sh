@@ -100,6 +100,13 @@ set_location() {
     >"$HOME/.local/state/omarchy/settings/weather.json"
 }
 
+# Points zone lookups at a tiny zone1970.tab holding the given rows (tab
+# separated: countries, coordinates, zone). setup_env's default is empty.
+set_zone_tab() {
+  printf '%s\n' "$@" >"$TEST_ROOT/zone1970.tab"
+  export OMARCHY_THEME_SCHEDULE_ZONE_TAB="$TEST_ROOT/zone1970.tab"
+}
+
 set_now() {
   OMARCHY_THEME_SCHEDULE_NOW=$(date -d "$1" +%s)
   export OMARCHY_THEME_SCHEDULE_NOW
@@ -132,6 +139,9 @@ setup_env() {
   mkdir -p "$TEST_ROOT/run"
   export XDG_RUNTIME_DIR="$TEST_ROOT/run"
   unset OMARCHY_THEME_SCHEDULE_NOW STUB_THEME_MODE
+  # No timezone has a location unless a test supplies a zone table.
+  : >"$TEST_ROOT/empty-zone.tab"
+  export OMARCHY_THEME_SCHEDULE_ZONE_TAB="$TEST_ROOT/empty-zone.tab"
 
   mkdir -p "$HOME/.local/state/omarchy/current" "$HOME/.local/state/omarchy/settings" \
     "$HOME/.config/omarchy/themes" "$OMARCHY_PATH/themes" "$TEST_ROOT/bin"

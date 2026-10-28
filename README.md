@@ -1,8 +1,8 @@
 # omarchy-theme-schedule
 
 Switch your Omarchy theme on a daily schedule. By default a light theme at
-sunrise and a dark one at sunset, using the location the weather panel
-already has; add as many slots as you like, at sunrise, sunset, a clock time,
+sunrise and a dark one at sunset, using the weather panel's location or,
+failing that, your timezone's; add as many slots as you like, at sunrise, sunset, a clock time,
 or an offset from either.
 
 Pick a theme by hand and it stays until the next slot.
@@ -25,8 +25,14 @@ Pick a theme by hand and it stays until the next slot.
     omarchy theme schedule off
 
 `<at>` is `HH:MM`, `sunrise` or `sunset`, with an optional `+`/`-` offset in
-minutes or hours: `sunset-30m`, `sunrise+1h`. Without a location, or where the
-sun does not rise or set that day, sunrise is 07:00 and sunset 19:00.
+minutes or hours: `sunset-30m`, `sunrise+1h`.
+
+Sunrise and sunset use the weather panel's location if one is set (from the
+panel, or with `omarchy weather location`). Most installs have none, because
+the panel detects its location in memory, so the coordinates of your timezone
+are used next (from `/usr/share/zoneinfo/zone1970.tab`: a city in your zone,
+good to a few minutes). With neither, or where the sun does not rise or set
+that day, sunrise is 07:00 and sunset 19:00. `status` says which applies.
 
 ## How it works
 
@@ -39,7 +45,7 @@ that slot changes, so a theme you picked yourself holds until the next one.
 | Schedule | `~/.local/state/omarchy/settings/theme-schedule.json` |
 | On/off | `~/.local/state/omarchy/toggles/theme-schedule` |
 | Last applied slot | `~/.local/state/omarchy/theme-schedule.applied` |
-| Location | `~/.local/state/omarchy/settings/weather.json` (the weather panel's) |
+| Location | `~/.local/state/omarchy/settings/weather.json` (the weather panel's), else your timezone's |
 | Menu rows | between `// theme-schedule:begin` and `:end` in `~/.config/omarchy/extensions/omarchy-menu.jsonc` |
 
 ### Menu file notes

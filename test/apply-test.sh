@@ -138,6 +138,13 @@ test_status_while_off_without_slots() {
   assert_contains "$out" "No slots" "no slots"
 }
 
+test_status_names_a_location_taken_from_the_timezone() {
+  export TZ=America/Edmonton
+  set_zone_tab $'CA\t+5333-11328\tAmerica/Edmonton\tCST'
+  set_now "2026-10-28 12:00"
+  assert_contains "$(cli status)" "Location: America/Edmonton (from your timezone)" "timezone location"
+}
+
 test_status_shows_today_and_next() {
   local out
   add_theme flexoki-light tokyo-night

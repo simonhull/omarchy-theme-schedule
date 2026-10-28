@@ -9,7 +9,17 @@ Pick a theme by hand and it stays until the next slot.
 
 ## Install
 
-Either route installs under `/usr`; the paths are fixed.
+On Omarchy, as your user:
+
+    curl -fsSL https://raw.githubusercontent.com/simonhull/omarchy-theme-schedule/main/install.sh | bash
+
+That builds and installs it as a pacman package, and adds
+Appearance › Theme Schedule to the Omarchy menu. Then turn it on from that
+menu, or with:
+
+    omarchy theme schedule on
+
+### From a clone
 
 As a package (tracked by pacman):
 
@@ -18,7 +28,7 @@ As a package (tracked by pacman):
 `make dist` writes `omarchy-theme-schedule-<version>.tar.gz` from the
 committed tree, and makepkg uses that local file instead of downloading one.
 
-Or straight into the system:
+Or straight into the system (paths are fixed under `/usr`):
 
     make test
     sudo make install

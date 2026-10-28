@@ -3,4 +3,5 @@
 # omarchy-theme-schedule release exists. A no-op if the package was removed and
 # this hook was left behind.
 command -v omarchy-theme-schedule >/dev/null || exit 0
-omarchy-theme-schedule check-update --notify || true
+# Quiet: the notification is the message, not a line in the update's output.
+omarchy-theme-schedule check-update --notify >/dev/null 2>&1 || true

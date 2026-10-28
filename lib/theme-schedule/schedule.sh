@@ -129,3 +129,45 @@ ts_resolve_slot() {
 
   echo $((epoch + offset))
 }
+
+# The schedule's slots, one "<at>\t<theme>" line each, in file order.
+ts_slots() {
+  jq -r '.slots // [] | .[] | [.at, .theme] | @tsv' "$TS_CONFIG" 2>/dev/null
+}
+
+# Every occurrence from yesterday to tomorrow as
+# "<epoch>\t<day>\t<at>\t<theme>\t<slot number>", in time order. Yesterday is
+# there so the hours before today's first slot belong to last night's; a
+# later slot number sorts last on a tie, so it wins. Invalid slots are skipped.
+ts_occurrences() {
+  local today day at theme number epoch
+
+  today=$(date -d "@$1" +%F)
+  for day in "$(date -d "$today -1 day" +%F)" "$today" "$(date -d "$today +1 day" +%F)"; do
+    number=0
+    while IFS=$'\t' read -r at theme; do
+      number=$((number + 1))
+      epoch=$(ts_resolve_slot "$day" "$at") || continue
+      printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$day" "$at" "$theme" "$number"
+    done < <(ts_slots)
+  done | sort -t $'\t' -k1,1n -k5,5n
+}
+
+# The occurrence active at an epoch: the latest one at or before it.
+ts_active() {
+  ts_occurrences "$1" | awk -F '\t' -v now="$1" '$1 <= now { line = $0 } END { if (line != "") print line }'
+}
+
+# The first occurrence after an epoch.
+ts_next() {
+  ts_occurrences "$1" | awk -F '\t' -v now="$1" '$1 > now { print; exit }'
+}
+
+# Names an occurrence as "<day>T<HH:MM> <at>-><theme>", the form recorded as
+# applied. The day is the slot's own, so the same slot on another day differs.
+ts_occurrence_key() {
+  local epoch day at theme
+
+  IFS=$'\t' read -r epoch day at theme _ <<<"$1"
+  printf '%sT%s %s->%s\n' "$day" "$(date -d "@$epoch" +%H:%M)" "$at" "$theme"
+}

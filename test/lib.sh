@@ -156,6 +156,7 @@ echo "$1" >"$HOME/.local/state/omarchy/current/theme.name"'
   stub omarchy-theme-color 'echo "${STUB_THEME_MODE:-dark}"'
   # The real omarchy-i18n prints the key back when its catalog has no entry,
   # which is the case for every key this package uses.
+  stub omarchy-launch-floating-terminal-with-presentation 'echo "float $*" >>"$STUB_LOG"'
   stub omarchy-i18n 'echo "$1"'
   stub omarchy-toggle-enabled '[[ -f $HOME/.local/state/omarchy/toggles/$1 ]]'
   stub omarchy-toggle 'flag="$HOME/.local/state/omarchy/toggles/$1"

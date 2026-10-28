@@ -200,4 +200,54 @@ test_check_update_is_not_in_the_usage() {
   assert_not_contains "$(omarchy-theme-schedule --help)" "check-update" "hidden"
 }
 
+# --- update ---
+
+given_installer() {
+  stub curl 'echo "curl $*" >>"$STUB_LOG"
+[[ ${FAKE_CURL_FAILS:-} == 1 ]] && exit 22
+echo "echo installer-ran >>\"\$STUB_LOG\""'
+}
+
+test_update_in_a_terminal_runs_the_installer() {
+  given_installer
+  OMARCHY_THEME_SCHEDULE_TTY=1 omarchy-theme-schedule update >/dev/null
+  assert_contains "$(stub_log)" "curl -fsSL https://raw.githubusercontent.com/simonhull/omarchy-theme-schedule/main/install.sh" "fetches the installer"
+  assert_eq 1 "$(count_in_log '^installer-ran')" "ran it"
+  assert_eq 0 "$(count_in_log '^float')" "no floating terminal"
+}
+
+test_update_installer_url_can_be_overridden() {
+  given_installer
+  OMARCHY_THEME_SCHEDULE_TTY=1 OMARCHY_THEME_SCHEDULE_INSTALLER_URL=https://example.invalid/install.sh \
+    omarchy-theme-schedule update >/dev/null
+  assert_contains "$(stub_log)" "curl -fsSL https://example.invalid/install.sh" "override"
+}
+
+test_update_without_a_terminal_opens_one() {
+  given_installer
+  OMARCHY_THEME_SCHEDULE_TTY=0 omarchy-theme-schedule update >/dev/null
+  assert_contains "$(stub_log)" "float omarchy-theme-schedule update" "floating terminal runs update"
+  assert_eq 0 "$(count_in_log '^curl')" "does not fetch itself"
+  assert_eq 0 "$(count_in_log '^installer-ran')" "does not install itself"
+}
+
+test_update_detects_stdin_when_not_overridden() {
+  given_installer
+  # run_tests gives each test /dev/null on stdin: not a terminal.
+  omarchy-theme-schedule update >/dev/null
+  assert_contains "$(stub_log)" "float omarchy-theme-schedule update" "floating terminal"
+}
+
+test_update_reports_a_failed_download() {
+  given_installer
+  assert_status 1 "fails" env FAKE_CURL_FAILS=1 OMARCHY_THEME_SCHEDULE_TTY=1 omarchy-theme-schedule update
+  assert_eq 0 "$(count_in_log '^installer-ran')" "nothing ran"
+  assert_contains "$(FAKE_CURL_FAILS=1 OMARCHY_THEME_SCHEDULE_TTY=1 omarchy-theme-schedule update 2>&1)" "Could not download the installer" "explains"
+}
+
+test_update_is_in_the_usage_and_args_header() {
+  assert_contains "$(omarchy-theme-schedule --help)" "update" "usage"
+  assert_contains "$(sed -n 4p "$REPO/bin/omarchy-theme-schedule")" "|update|" "omarchy:args"
+}
+
 run_tests

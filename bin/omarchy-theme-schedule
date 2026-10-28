@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Switch themes on a daily schedule, such as a light theme at sunrise and a dark one at sunset
-# omarchy:args=[status|apply [--force]|on|off|list|add <at> <theme>|set <n> <at> <theme>|remove <n>|setup|teardown|--version]
+# omarchy:args=[status|apply [--force]|on|off|list|add <at> <theme>|set <n> <at> <theme>|remove <n>|setup|teardown|update|--version]
 # omarchy:examples=omarchy theme schedule add sunset "Tokyo Night"|omarchy theme schedule add 07:30 flexoki-light|omarchy theme schedule status
 
 source "${OMARCHY_THEME_SCHEDULE_LIB:-/usr/share/omarchy-theme-schedule}/schedule.sh" || exit 1
@@ -41,6 +41,7 @@ declare -A TS_ENGLISH=(
   [themeSchedule.menuBlockDamaged]="%1 has an unfinished theme-schedule block; fix or remove it by hand"
   [themeSchedule.menuItemsWrapper]="%1 wraps its rows in \"items\"; add the theme schedule rows inside it by hand"
   [themeSchedule.menuFailed]="Theme schedule not changed"
+  [themeSchedule.updateFetchFailed]="Could not download the installer"
   [themeSchedule.updateTitle]="Theme Schedule %1 is available"
   [themeSchedule.updateBody]="Update it from the Omarchy menu (Update › Theme Schedule) or run: omarchy theme schedule update"
   [themeSchedule.menuSlots]="Theme schedule"
@@ -100,6 +101,7 @@ Usage: omarchy-theme-schedule <command>
   set <n> <at> <theme>    Replace slot n
   remove <n>              Remove slot n
   setup | teardown        Add or remove Theme Schedule in the Omarchy menu
+  update                  Install the latest release
   --version               Print the version
 
 <at> is HH:MM, sunrise or sunset, with an optional offset: sunset-30m, sunrise+1h.
@@ -536,6 +538,31 @@ cmd_check_update() {
   return 0
 }
 
+# Upgrades by running the installer. It asks sudo for a password, so it needs a
+# terminal: from the menu (no terminal on stdin) it reopens itself in a floating
+# one. OMARCHY_THEME_SCHEDULE_TTY=1/0 stands in for the terminal test.
+cmd_update() {
+  local url=${OMARCHY_THEME_SCHEDULE_INSTALLER_URL:-https://raw.githubusercontent.com/simonhull/omarchy-theme-schedule/main/install.sh}
+  local tty=${OMARCHY_THEME_SCHEDULE_TTY:-}
+  local installer
+
+  if [[ -z $tty ]]; then
+    if [[ -t 0 ]]; then tty=1; else tty=0; fi
+  fi
+
+  if [[ $tty != 1 ]]; then
+    omarchy-launch-floating-terminal-with-presentation omarchy-theme-schedule update
+    return
+  fi
+
+  # Fetched whole before anything runs, so a failed download runs nothing.
+  if ! installer=$(curl -fsSL "$url") || [[ -z $installer ]]; then
+    t themeSchedule.updateFetchFailed >&2
+    return 1
+  fi
+  bash <<<"$installer"
+}
+
 pretty_theme() {
   sed -E 's/-/ /g; s/\b(.)/\u\1/g' <<<"$1"
 }
@@ -690,6 +717,7 @@ main() {
     menu) cmd_menu "${@:2}" ;;
     setup) cmd_setup ;;
     teardown) cmd_teardown ;;
+    update) cmd_update ;;
     check-update) cmd_check_update "${@:2}" ;;
     --version | version) echo "omarchy-theme-schedule $TS_VERSION" ;;
     -h | --help | help) usage ;;

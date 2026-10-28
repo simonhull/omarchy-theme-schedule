@@ -10,6 +10,7 @@ test_make_install_lays_out_the_package() {
 /usr/lib/systemd/user/omarchy-theme-schedule.timer
 /usr/share/licenses/omarchy-theme-schedule/LICENSE
 /usr/share/omarchy-theme-schedule/menu.jsonc
+/usr/share/omarchy-theme-schedule/post-update.hook
 /usr/share/omarchy-theme-schedule/schedule.sh
 /usr/share/omarchy-theme-schedule/sun.awk
 EOF

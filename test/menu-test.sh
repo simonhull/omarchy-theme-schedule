@@ -322,4 +322,80 @@ test_menu_slots_full_row_text_for_sun_and_clock_slots() {
   assert_eq "menu Theme schedule: [2. 07:00 → Flexoki Light] [1. Sunset-30m (16:12) → Tokyo Night]" "$line" "exact rows, today only"
 }
 
+# --- the post-update hook ---
+
+HOOK() {
+  echo "$HOME/.config/omarchy/hooks/post-update.d/omarchy-theme-schedule"
+}
+
+test_setup_installs_the_post_update_hook() {
+  assert_status 0 "setup" omarchy-theme-schedule setup
+  assert_contains "$(stub_log)" "hook-install post-update " "installed as a post-update hook"
+  assert_status 0 "hook is in place under its own name" test -x "$(HOOK)"
+  assert_status 0 "same file as the shipped one" cmp "$REPO/lib/theme-schedule/post-update.hook" "$(HOOK)"
+}
+
+test_setup_twice_leaves_one_hook() {
+  omarchy-theme-schedule setup
+  omarchy-theme-schedule setup
+  assert_eq "omarchy-theme-schedule" "$(ls "$HOME/.config/omarchy/hooks/post-update.d")" "one file"
+  assert_status 0 "same file as the shipped one" cmp "$REPO/lib/theme-schedule/post-update.hook" "$(HOOK)"
+}
+
+test_setup_leaves_other_hooks_alone() {
+  mkdir -p "$HOME/.config/omarchy/hooks/post-update.d"
+  echo mine >"$HOME/.config/omarchy/hooks/post-update.d/mine"
+  omarchy-theme-schedule setup
+  omarchy-theme-schedule teardown
+  assert_eq "mine" "$(ls "$HOME/.config/omarchy/hooks/post-update.d")" "only ours removed"
+}
+
+test_teardown_removes_the_hook() {
+  omarchy-theme-schedule setup
+  assert_status 0 "teardown" omarchy-theme-schedule teardown
+  assert_status 1 "hook gone" test -e "$(HOOK)"
+}
+
+test_teardown_without_the_hook_is_fine() {
+  assert_status 0 "no hook, no menu file" omarchy-theme-schedule teardown
+  omarchy-theme-schedule setup
+  rm "$(HOOK)"
+  assert_status 0 "no hook" omarchy-theme-schedule teardown
+}
+
+test_teardown_removes_the_hook_even_without_a_menu_block() {
+  mkdir -p "$HOME/.config/omarchy/hooks/post-update.d"
+  echo x >"$(HOOK)"
+  assert_status 0 "teardown" omarchy-theme-schedule teardown
+  assert_status 1 "hook gone" test -e "$(HOOK)"
+}
+
+test_a_failed_hook_install_warns_but_setup_succeeds() {
+  local err
+  export STUB_HOOK_INSTALL_FAILS=1
+  assert_status 0 "setup" omarchy-theme-schedule setup
+  err=$(omarchy-theme-schedule setup 2>&1 >/dev/null)
+  assert_contains "$err" "update notifications" "warns"
+  assert_eq '"Theme Schedule"' "$(menu_json | jq '."appearance.theme-schedule".label')" "menu block still added"
+}
+
+test_setup_does_not_install_the_hook_when_the_menu_is_refused() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{"personal": {"label":"Personal"}}\n' >"$(MENU)"
+  omarchy-theme-schedule setup 2>/dev/null
+  assert_status 1 "no hook" test -e "$(HOOK)"
+}
+
+test_the_hook_is_a_noop_without_the_command_and_runs_check_update_with_it() {
+  local hook="$REPO/lib/theme-schedule/post-update.hook"
+  assert_eq "#!/bin/bash" "$(head -n 1 "$hook")" "shebang"
+  # An empty PATH, so an installed copy on this machine does not count.
+  mkdir "$TEST_ROOT/empty"
+  assert_status 0 "no command, no error" env PATH="$TEST_ROOT/empty" /usr/bin/bash "$hook"
+  assert_eq "" "$(env PATH="$TEST_ROOT/empty" /usr/bin/bash "$hook" 2>&1)" "and says nothing"
+  stub omarchy-theme-schedule 'echo "schedule $*" >>"$STUB_LOG"; exit 3'
+  assert_status 0 "never fails" bash "$hook"
+  assert_contains "$(stub_log)" "schedule check-update --notify" "checks and notifies"
+}
+
 run_tests

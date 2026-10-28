@@ -31,6 +31,7 @@ install:
 	install -Dm644 lib/theme-schedule/schedule.sh $(SHAREDIR)/schedule.sh
 	install -Dm644 lib/theme-schedule/sun.awk $(SHAREDIR)/sun.awk
 	install -Dm644 lib/theme-schedule/menu.jsonc $(SHAREDIR)/menu.jsonc
+	install -Dm644 lib/theme-schedule/post-update.hook $(SHAREDIR)/post-update.hook
 	install -Dm644 systemd/$(NAME).service $(UNITDIR)/$(NAME).service
 	install -Dm644 systemd/$(NAME).timer $(UNITDIR)/$(NAME).timer
 	install -Dm644 LICENSE $(LICENSEDIR)/LICENSE
@@ -42,7 +43,7 @@ install:
 # Removes exactly what install puts in place, and the two directories it owns.
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME)
-	rm -f $(SHAREDIR)/schedule.sh $(SHAREDIR)/sun.awk $(SHAREDIR)/menu.jsonc
+	rm -f $(SHAREDIR)/schedule.sh $(SHAREDIR)/sun.awk $(SHAREDIR)/menu.jsonc $(SHAREDIR)/post-update.hook
 	rm -f $(UNITDIR)/$(NAME).service $(UNITDIR)/$(NAME).timer
 	rm -f $(LICENSEDIR)/LICENSE
 	rm -f $(DISPATCHDIR)/$(NAME)

@@ -1,0 +1,6 @@
+#!/bin/bash
+# Run by `omarchy update` (hooks/post-update.d). Tells the user when a new
+# omarchy-theme-schedule release exists. A no-op if the package was removed and
+# this hook was left behind.
+command -v omarchy-theme-schedule >/dev/null || exit 0
+omarchy-theme-schedule check-update --notify || true

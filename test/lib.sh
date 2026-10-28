@@ -139,7 +139,7 @@ setup_env() {
   unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
   mkdir -p "$TEST_ROOT/run"
   export XDG_RUNTIME_DIR="$TEST_ROOT/run"
-  unset OMARCHY_THEME_SCHEDULE_NOW STUB_THEME_MODE
+  unset OMARCHY_THEME_SCHEDULE_NOW STUB_THEME_MODE STUB_HOOK_INSTALL_FAILS
   # No timezone has a location unless a test supplies a zone table.
   : >"$TEST_ROOT/empty-zone.tab"
   export OMARCHY_THEME_SCHEDULE_ZONE_TAB="$TEST_ROOT/empty-zone.tab"
@@ -157,6 +157,13 @@ echo "$1" >"$HOME/.local/state/omarchy/current/theme.name"'
   # The real omarchy-i18n prints the key back when its catalog has no entry,
   # which is the case for every key this package uses.
   stub omarchy-launch-floating-terminal-with-presentation 'echo "float $*" >>"$STUB_LOG"'
+  # Like the real one: copies the file into <type>.d under its own name.
+  stub omarchy-hook-install 'echo "hook-install $*" >>"$STUB_LOG"
+[[ ${STUB_HOOK_INSTALL_FAILS:-} == 1 ]] && exit 1
+dir="$HOME/.config/omarchy/hooks/$1.d"
+mkdir -p "$dir"
+cp -- "$2" "$dir/$(basename -- "$2")"
+chmod 755 "$dir/$(basename -- "$2")"'
   stub omarchy-i18n 'echo "$1"'
   stub omarchy-toggle-enabled '[[ -f $HOME/.local/state/omarchy/toggles/$1 ]]'
   stub omarchy-toggle 'flag="$HOME/.local/state/omarchy/toggles/$1"

@@ -41,6 +41,7 @@ declare -A TS_ENGLISH=(
   [themeSchedule.menuBlockDamaged]="%1 has an unfinished theme-schedule block; fix or remove it by hand"
   [themeSchedule.menuItemsWrapper]="%1 wraps its rows in \"items\"; add the theme schedule rows inside it by hand"
   [themeSchedule.menuFailed]="Theme schedule not changed"
+  [themeSchedule.hookFailed]="Could not install the update notifications; Theme Schedule itself is set up"
   [themeSchedule.updateFetchFailed]="Could not download the installer"
   [themeSchedule.updateTitle]="Theme Schedule %1 is available"
   [themeSchedule.updateBody]="Update it from the Omarchy menu (Update › Theme Schedule) or run: omarchy theme schedule update"
@@ -424,6 +425,26 @@ menu_file_wraps_items() {
     | jq -e 'type == "object" and (.items | type) == "object"' >/dev/null 2>&1
 }
 
+TS_HOOK_NAME=omarchy-theme-schedule
+TS_HOOK_DIR="$HOME/.config/omarchy/hooks/post-update.d"
+
+# Installs the post-update hook the way Omarchy does. omarchy-hook-install
+# names the installed file after the file it is given and has no remove
+# counterpart, so the hook is copied under its installed name first, and
+# teardown deletes that one file.
+install_update_hook() {
+  local dir
+
+  dir=$(mktemp -d) || return 1
+  if cp -- "$TS_LIB/post-update.hook" "$dir/$TS_HOOK_NAME" \
+    && omarchy-hook-install post-update "$dir/$TS_HOOK_NAME" >/dev/null; then
+    rm -rf "$dir"
+    return 0
+  fi
+  rm -rf "$dir"
+  return 1
+}
+
 cmd_setup() {
   local file
 
@@ -450,11 +471,16 @@ cmd_setup() {
   # An existing block is replaced in the same rewrite: setup is repeatable, and
   # old rows update.
   rewrite_menu_file menu_block_edit setup || return 1
+  # The menu is the main job; update notifications are a bonus.
+  install_update_hook || t themeSchedule.hookFailed >&2
   t themeSchedule.setupDone
 }
 
 cmd_teardown() {
   local file state
+
+  # Exactly the one file setup installed; never the directory or its neighbours.
+  rm -f -- "$TS_HOOK_DIR/$TS_HOOK_NAME"
 
   file=$(readlink -m -- "$TS_MENU_FILE") || return 1
   [[ -f $file ]] || return 0

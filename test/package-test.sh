@@ -14,13 +14,16 @@ test_make_install_lays_out_the_package() {
 EOF
 )" "$(cd "$dest" && find . -type f | sed 's|^\.||' | sort)" "installed files"
   assert_status 0 "binary is executable" test -x "$dest/usr/bin/omarchy-theme-schedule"
+  # The omarchy dispatcher only routes commands linked into its own bin dir.
+  assert_eq /usr/bin/omarchy-theme-schedule "$(readlink "$dest/usr/share/omarchy/bin/omarchy-theme-schedule")" \
+    "linked where omarchy theme schedule finds it"
 }
 
 test_make_uninstall_removes_everything_install_put_in_place() {
   local dest="$TEST_ROOT/pkg"
   make -s -C "$REPO" DESTDIR="$dest" PREFIX=/usr install >/dev/null
   make -s -C "$REPO" DESTDIR="$dest" PREFIX=/usr uninstall >/dev/null
-  assert_eq "" "$(find "$dest" -type f)" "no files left"
+  assert_eq "" "$(find "$dest" -type f -o -type l)" "no files or links left"
   assert_eq "" "$(find "$dest" -name 'omarchy-theme-schedule*')" "no package directories left"
 }
 

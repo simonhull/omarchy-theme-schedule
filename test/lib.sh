@@ -195,6 +195,8 @@ printf "%s\n" "$answer"'
   # instead of reaching the real desktop.
   for cmd in /usr/bin/omarchy-* /usr/bin/hyprctl /usr/bin/notify-send /usr/bin/makoctl; do
     [[ -e $cmd && ! -e $TEST_ROOT/bin/${cmd##*/} ]] || continue
+    # An installed copy of the command under test must not shadow the repo's.
+    [[ ${cmd##*/} == omarchy-theme-schedule ]] && continue
     stub "${cmd##*/}" 'echo "UNSTUBBED ${0##*/} $*" >>"$STUB_LOG"; exit 99'
   done
 

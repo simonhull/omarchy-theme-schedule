@@ -8,6 +8,7 @@ VERSION = $(shell sed -n 's/^pkgver=//p' PKGBUILD)
 SHAREDIR = $(DESTDIR)$(PREFIX)/share/$(NAME)
 UNITDIR = $(DESTDIR)$(PREFIX)/lib/systemd/user
 LICENSEDIR = $(DESTDIR)$(PREFIX)/share/licenses/$(NAME)
+DISPATCHDIR = $(DESTDIR)$(PREFIX)/share/omarchy/bin
 
 .PHONY: test install uninstall dist
 
@@ -28,6 +29,10 @@ install:
 	install -Dm644 systemd/$(NAME).service $(UNITDIR)/$(NAME).service
 	install -Dm644 systemd/$(NAME).timer $(UNITDIR)/$(NAME).timer
 	install -Dm644 LICENSE $(LICENSEDIR)/LICENSE
+	# `omarchy <group> <name>` only routes commands linked into Omarchy's own
+	# bin directory, the way core links each of its commands there.
+	install -d $(DISPATCHDIR)
+	ln -sf $(PREFIX)/bin/$(NAME) $(DISPATCHDIR)/$(NAME)
 
 # Removes exactly what install puts in place, and the two directories it owns.
 uninstall:
@@ -35,4 +40,5 @@ uninstall:
 	rm -f $(SHAREDIR)/schedule.sh $(SHAREDIR)/sun.awk $(SHAREDIR)/menu.jsonc
 	rm -f $(UNITDIR)/$(NAME).service $(UNITDIR)/$(NAME).timer
 	rm -f $(LICENSEDIR)/LICENSE
+	rm -f $(DISPATCHDIR)/$(NAME)
 	rmdir $(SHAREDIR) $(LICENSEDIR)

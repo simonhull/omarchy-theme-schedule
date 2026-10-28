@@ -5,4 +5,6 @@
   "appearance.theme-schedule.slots": {"icon":"󰸌","label":"Slots","action":"omarchy-theme-schedule menu slots"},
   "appearance.theme-schedule.add": {"icon":"󰐕","label":"Add Slot","action":"omarchy-theme-schedule menu add"},
   "appearance.theme-schedule.apply": {"icon":"󰑓","label":"Apply Now","when":"omarchy-toggle-enabled theme-schedule","action":"omarchy-theme-schedule apply --force"},
+  "appearance.theme-schedule.update": {"icon":"󰚰","label":"Update Theme Schedule","when":"[[ $(omarchy-theme-schedule check-update --cached) == available* ]]","action":"omarchy-launch-floating-terminal-with-presentation omarchy-theme-schedule update"},
+  "update.theme-schedule": {"icon":"󰸌","label":"Theme Schedule","when":"[[ $(omarchy-theme-schedule check-update --cached) == available* ]]","action":"omarchy-launch-floating-terminal-with-presentation omarchy-theme-schedule update"},
   // theme-schedule:end

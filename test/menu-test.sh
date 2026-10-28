@@ -264,6 +264,33 @@ test_menu_rows_have_the_right_when_and_action() {
   assert_eq '"omarchy-theme-schedule menu add"' "$(menu_json | jq "$p.add\".action")" "add action"
   assert_eq '"omarchy-toggle-enabled theme-schedule"' "$(menu_json | jq "$p.apply\".when")" "apply when"
   assert_eq '"omarchy-theme-schedule apply --force"' "$(menu_json | jq "$p.apply\".action")" "apply action"
+
+  local when='"[[ $(omarchy-theme-schedule check-update --cached) == available* ]]"'
+  local action='"omarchy-launch-floating-terminal-with-presentation omarchy-theme-schedule update"'
+  assert_eq "$when" "$(menu_json | jq "$p.update\".when")" "appearance update when"
+  assert_eq "$action" "$(menu_json | jq "$p.update\".action")" "appearance update action"
+  assert_eq '"Update Theme Schedule"' "$(menu_json | jq "$p.update\".label")" "appearance update label"
+  assert_eq "$when" "$(menu_json | jq '."update.theme-schedule".when')" "update row when"
+  assert_eq "$action" "$(menu_json | jq '."update.theme-schedule".action')" "update row action"
+  assert_eq '"Theme Schedule"' "$(menu_json | jq '."update.theme-schedule".label')" "update row label"
+  # The update row wears the package's own glyph, the parent row's.
+  assert_eq "$(menu_json | jq '."appearance.theme-schedule".icon')" "$(menu_json | jq '."update.theme-schedule".icon')" "same glyph as the parent row"
+}
+
+test_the_update_row_is_inside_the_one_marked_block() {
+  mkdir -p "$(dirname "$(MENU)")"
+  printf '{\n  "personal": {"label":"Personal"}\n}\n' >"$(MENU)"
+  cp "$(MENU)" "$TEST_ROOT/before"
+  omarchy-theme-schedule setup
+  local begin end row
+  begin=$(grep -n 'theme-schedule:begin' "$(MENU)" | cut -d: -f1)
+  end=$(grep -n 'theme-schedule:end' "$(MENU)" | cut -d: -f1)
+  row=$(grep -n '"update.theme-schedule"' "$(MENU)" | cut -d: -f1)
+  TESTS_RUN=$((TESTS_RUN + 1))
+  ((begin < row && row < end)) || fail "update row at $row, block at $begin-$end"
+  assert_eq 1 "$(grep -c 'theme-schedule:begin' "$(MENU)")" "one block"
+  omarchy-theme-schedule teardown
+  assert_status 0 "teardown takes the update row too" cmp "$TEST_ROOT/before" "$(MENU)"
 }
 
 test_menu_add_with_an_empty_typed_time_is_silent() {

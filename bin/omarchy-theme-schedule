@@ -236,7 +236,8 @@ cmd_apply() {
     omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.themeMissing)" \
       "$(t themeSchedule.themeMissingBody "$theme")" >/dev/null
   elif [[ $(ts_current_theme) != "$theme" ]]; then
-    if ! omarchy-theme-set "$theme"; then
+    # 9>&- keeps the switch's long-running detached children from inheriting the schedule lock.
+    if ! omarchy-theme-set "$theme" 9>&-; then
       # Recorded anyway: retrying every minute would only repeat the failure.
       omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.switchFailed "$theme")" >/dev/null
       status=1
@@ -329,6 +330,66 @@ cmd_status() {
   fi
 }
 
+# Rewrites the menu file through a command reading it on stdin, keeping its
+# permissions. The shell watches the file, so the menu updates at once.
+rewrite_menu_file() {
+  local tmp
+
+  tmp=$(mktemp "$TS_MENU_FILE.XXXXXX") || return 1
+  if "$@" <"$TS_MENU_FILE" >"$tmp"; then
+    chmod --reference="$TS_MENU_FILE" "$tmp"
+    mv "$tmp" "$TS_MENU_FILE"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+remove_menu_block() {
+  sed '/^[[:space:]]*\/\/ theme-schedule:begin/,/^[[:space:]]*\/\/ theme-schedule:end/d'
+}
+
+# The block goes right after the opening brace: its rows all end in a comma,
+# which is valid there whatever follows, since the shell drops a trailing comma.
+insert_menu_block() {
+  awk -v block="$TS_MENU_BLOCK" '
+    !done && /^[[:space:]]*\{[[:space:]]*$/ {
+      print
+      while ((getline line < block) > 0) print line
+      done = 1
+      next
+    }
+    { print }
+  '
+}
+
+menu_block_present() {
+  grep -qE '^[[:space:]]*// theme-schedule:begin' "$TS_MENU_FILE" 2>/dev/null
+}
+
+cmd_setup() {
+  mkdir -p "${TS_MENU_FILE%/*}"
+  [[ -f $TS_MENU_FILE ]] || printf '{\n}\n' >"$TS_MENU_FILE"
+
+  if ! grep -qE '^[[:space:]]*\{[[:space:]]*$' "$TS_MENU_FILE"; then
+    t themeSchedule.menuFileUnreadable "$TS_MENU_FILE" >&2
+    return 1
+  fi
+
+  # Replacing a block already there keeps setup repeatable and updates old rows.
+  if menu_block_present; then
+    rewrite_menu_file remove_menu_block || return 1
+  fi
+  rewrite_menu_file insert_menu_block || return 1
+  t themeSchedule.setupDone
+}
+
+cmd_teardown() {
+  menu_block_present || return 0
+  rewrite_menu_file remove_menu_block || return 1
+  t themeSchedule.teardownDone
+}
+
 main() {
   case ${1:-status} in
     status) cmd_status ;;
@@ -339,6 +400,8 @@ main() {
     add) cmd_add "${@:2}" ;;
     set) cmd_set "${@:2}" ;;
     remove) cmd_remove "${@:2}" ;;
+    setup) cmd_setup ;;
+    teardown) cmd_teardown ;;
     -h | --help | help) usage ;;
     *)
       usage >&2

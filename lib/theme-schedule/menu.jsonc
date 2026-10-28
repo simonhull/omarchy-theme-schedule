@@ -1,0 +1,8 @@
+  // theme-schedule:begin (written by omarchy-theme-schedule setup; teardown removes it)
+  "appearance.theme-schedule": {"icon":"󰸌","label":"Theme Schedule","aliases":["theme-schedule"],"description":"Switch themes at sunrise, sunset or set times"},
+  "appearance.theme-schedule.on": {"icon":"󰔎","label":"Schedule On","when":"! omarchy-toggle-enabled theme-schedule","action":"omarchy-theme-schedule on"},
+  "appearance.theme-schedule.off": {"icon":"󰔎","label":"Schedule Off","when":"omarchy-toggle-enabled theme-schedule","action":"omarchy-theme-schedule off"},
+  "appearance.theme-schedule.slots": {"icon":"󰸌","label":"Slots","action":"omarchy-theme-schedule menu slots"},
+  "appearance.theme-schedule.add": {"icon":"󰐱","label":"Add Slot","action":"omarchy-theme-schedule menu add"},
+  "appearance.theme-schedule.apply": {"icon":"󰑓","label":"Apply Now","when":"omarchy-toggle-enabled theme-schedule","action":"omarchy-theme-schedule apply --force"},
+  // theme-schedule:end

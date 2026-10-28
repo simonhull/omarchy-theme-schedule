@@ -10,7 +10,7 @@ UNITDIR = $(DESTDIR)$(PREFIX)/lib/systemd/user
 LICENSEDIR = $(DESTDIR)$(PREFIX)/share/licenses/$(NAME)
 DISPATCHDIR = $(DESTDIR)$(PREFIX)/share/omarchy/bin
 
-.PHONY: test install uninstall dist
+.PHONY: test install uninstall dist release
 
 test:
 	bash test/run.sh
@@ -20,6 +20,11 @@ test:
 # It holds what is committed at HEAD.
 dist:
 	git archive --prefix=$(NAME)-$(VERSION)/ -o $(NAME)-$(VERSION).tar.gz HEAD
+
+# make release VERSION=x.y.z; see tools/release.sh for what it does and in what order.
+release:
+	@test "$(origin VERSION)" = "command line" || { echo "usage: make release VERSION=x.y.z" >&2; exit 1; }
+	bash tools/release.sh $(VERSION)
 
 install:
 	install -Dm755 bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/$(NAME)

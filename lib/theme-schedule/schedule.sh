@@ -25,7 +25,7 @@ ts_now() {
 ts_parse_at() {
   local base offset=0 amount
 
-  [[ $1 =~ ^(sunrise|sunset|([01][0-9]|2[0-3]):[0-5][0-9])(([+-])([0-9]+)([mh]))?$ ]] || return 1
+  [[ $1 =~ ^(sunrise|sunset|([01][0-9]|2[0-3]):[0-5][0-9])(([+-])([0-9]{1,4})([mh]))?$ ]] || return 1
   base=${BASH_REMATCH[1]}
 
   if [[ -n ${BASH_REMATCH[3]} ]]; then
@@ -53,7 +53,10 @@ ts_current_theme() {
 }
 
 # A local clock time on a day, as an epoch. A time a DST jump skips does not
-# exist, so it counts that many minutes from midnight instead.
+# exist, so it lands where the clock resumes: the same minute an hour later,
+# which covers every gap of an hour or less. Failing that (a longer gap, or no
+# later hour on the day) it is counted from noon, which exists in every zone
+# even where midnight does not.
 ts_clock_epoch() {
   local day=$1 time=$2 hours minutes
 
@@ -61,7 +64,10 @@ ts_clock_epoch() {
 
   hours=$((10#${time%:*}))
   minutes=$((10#${time#*:}))
-  echo $(($(date -d "$day 00:00" +%s) + hours * 3600 + minutes * 60))
+  if ((hours < 23)); then
+    date -d "$day $(printf '%02d:%02d' $((hours + 1)) "$minutes")" +%s 2>/dev/null && return 0
+  fi
+  echo $(($(date -d "$day 12:00" +%s) + (hours * 60 + minutes - 720) * 60))
 }
 
 # The weather panel's location as "<lat> <lon>"; fails when none is set.
@@ -94,10 +100,16 @@ ts_sun_times() {
 # Why sunrise and sunset on a day are the fallback times: "no-location",
 # "polar", or nothing when they are real.
 ts_sun_fallback() {
-  case $(ts_sun_times "$1") in
-    none) echo no-location ;;
-    polar) echo polar ;;
-  esac
+  local times
+  times=$(ts_sun_times "$1")
+
+  # Mirrors ts_sun_event: only "<rise> <set>" counts as real, so anything else
+  # (including a sun.awk failure, which prints nothing) is a fallback day.
+  if [[ $times == none ]]; then
+    echo no-location
+  elif [[ ! $times =~ ^[0-9]+\ [0-9]+$ ]]; then
+    echo polar
+  fi
 }
 
 # The epoch of sunrise or sunset on a day.
@@ -130,23 +142,28 @@ ts_resolve_slot() {
   echo $((epoch + offset))
 }
 
-# The schedule's slots, one "<at>\t<theme>" line each, in file order.
+# The schedule's slots, one "<number>\t<at>\t<theme>" line each, in file
+# order. The number is the slot's 1-based place in the file, counting entries
+# that are skipped as malformed, so "slot 3" always means the third entry.
 ts_slots() {
-  jq -r '.slots // [] | .[] | [.at, .theme] | @tsv' "$TS_CONFIG" 2>/dev/null
+  jq -r '.slots // [] | (if type == "array" then to_entries[] else empty end)
+    | select(.value | type == "object" and (.at | type) == "string" and (.theme | type) == "string" and .theme != "")
+    | [.key + 1, .value.at, .value.theme] | @tsv' "$TS_CONFIG" 2>/dev/null
 }
 
 # Every occurrence from yesterday to tomorrow as
 # "<epoch>\t<day>\t<at>\t<theme>\t<slot number>", in time order. Yesterday is
 # there so the hours before today's first slot belong to last night's; a
 # later slot number sorts last on a tie, so it wins. Invalid slots are skipped.
+# Neighbouring days are found from noon, which exists even in zones whose DST
+# jump removes midnight, and with "ago"/"tomorrow" because "12:00 -1 day"
+# would read -1 as a UTC offset.
 ts_occurrences() {
   local today day at theme number epoch
 
   today=$(date -d "@$1" +%F)
-  for day in "$(date -d "$today -1 day" +%F)" "$today" "$(date -d "$today +1 day" +%F)"; do
-    number=0
-    while IFS=$'\t' read -r at theme; do
-      number=$((number + 1))
+  for day in "$(date -d "$today 12:00 1 day ago" +%F)" "$today" "$(date -d "$today 12:00 tomorrow" +%F)"; do
+    while IFS=$'\t' read -r number at theme; do
       epoch=$(ts_resolve_slot "$day" "$at") || continue
       printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$day" "$at" "$theme" "$number"
     done < <(ts_slots)

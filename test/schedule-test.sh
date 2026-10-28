@@ -14,7 +14,7 @@ test_parse_at_accepts_times_and_sun_events() {
 
 test_parse_at_rejects_everything_else() {
   local bad
-  for bad in 24:00 7:30 noon sunset-30 sunset+-1h Sunset "" "07:30 "; do
+  for bad in 24:00 7:30 noon sunset-30 sunset+-1h Sunset "" "07:30 " 07:30+99999m; do
     assert_status 1 "rejects '$bad'" ts_parse_at "$bad"
   done
 }
@@ -38,7 +38,7 @@ test_clock_epoch_is_local_time() {
   assert_eq "$(epoch "2026-10-28 07:30")" "$(ts_clock_epoch 2026-10-28 07:30)" "plain day"
 }
 
-test_clock_epoch_in_a_dst_gap_counts_from_midnight() {
+test_clock_epoch_in_a_dst_gap_lands_where_the_clock_resumes() {
   # 01:30 does not exist in London on 2026-03-29; 90 minutes after midnight is 02:30 BST.
   assert_eq "$(epoch "2026-03-29 02:30")" "$(ts_clock_epoch 2026-03-29 01:30)" "spring-forward gap"
 }
@@ -183,6 +183,100 @@ test_polar_boundary_day_still_resolves() {
   assert_eq night "$(active_theme)" "sunset spilling past midnight is still active"
   assert_eq "2026-05-18" "$(ts_active "$(ts_now)" | cut -f2)" "belongs to the 18th's occurrence"
   assert_eq "$(epoch "2026-05-19 07:00")" "$(ts_next "$(ts_now)" | cut -f1)" "next is the 19th's fallback sunrise"
+}
+
+test_parse_at_reads_leading_zero_offsets_as_decimal() {
+  assert_eq "08:30 540" "$(ts_parse_at 08:30+09m)" "09 is not octal"
+}
+
+test_resolve_slot_reads_leading_zero_times_as_decimal() {
+  assert_eq "$(epoch "2026-10-28 09:08")" "$(ts_resolve_slot 2026-10-28 09:08)" "09:08 is not octal"
+  assert_eq "$(epoch "2026-10-28 08:09")" "$(ts_resolve_slot 2026-10-28 08:09)" "08:09 is not octal"
+}
+
+test_clock_epoch_gap_keeps_leading_zero_minutes() {
+  assert_eq "$(epoch "2026-03-29 02:08")" "$(ts_clock_epoch 2026-03-29 01:08)" "01:08 in the gap"
+  assert_eq "$(epoch "2026-03-29 02:09")" "$(ts_clock_epoch 2026-03-29 01:09)" "01:09 in the gap"
+}
+
+test_clock_epoch_in_a_gap_at_midnight_zone() {
+  export TZ=Africa/Cairo
+  assert_eq "$(epoch "2026-04-24 01:30")" "$(ts_clock_epoch 2026-04-24 00:30)" "midnight does not exist in Cairo"
+}
+
+test_occurrences_in_a_zone_with_no_midnight() {
+  export TZ=Africa/Cairo
+  write_schedule "$DAY_NIGHT"
+  set_now "2026-04-24 12:00"
+  assert_eq day "$(active_theme)" "midday is day"
+  assert_eq 2026-04-24 "$(ts_active "$(ts_now)" | cut -f2)" "slot day"
+  local day
+  while IFS= read -r day; do
+    [[ $day =~ ^2026-04-2[345]$ ]] || fail "unexpected day field '$day'"
+  done < <(ts_occurrences "$(ts_now)" | cut -f2)
+  assert_eq 6 "$(ts_occurrences "$(ts_now)" | wc -l)" "three days of two slots"
+}
+
+test_occurrences_in_havana_and_beirut() {
+  local zone day
+  for zone in "America/Havana 2026-03-08" "Asia/Beirut 2026-03-29"; do
+    export TZ=${zone% *}
+    write_schedule "$DAY_NIGHT"
+    set_now "${zone#* } 12:00"
+    assert_eq 6 "$(ts_occurrences "$(ts_now)" | wc -l)" "$zone has six occurrences"
+    assert_eq "${zone#* }" "$(ts_active "$(ts_now)" | cut -f2)" "$zone slot day"
+  done
+}
+
+test_slot_numbers_follow_the_file_even_with_junk() {
+  write_schedule '{"slots":[{"at":"07:00","theme":"a"},"x",{"at":"09:00","theme":"b"}]}'
+  set_now "2026-10-28 10:00"
+  assert_eq b "$(active_theme)" "valid slot after junk"
+  assert_eq 3 "$(ts_active "$(ts_now)" | cut -f5)" "third entry in the file"
+}
+
+test_slots_object_instead_of_array_is_nothing() {
+  write_schedule '{"slots":{"at":"07:00","theme":"a"}}'
+  set_now "2026-10-28 10:00"
+  assert_eq "" "$(ts_active "$(ts_now)")" "object slots"
+}
+
+test_slot_without_theme_is_skipped() {
+  write_schedule '{"slots":[{"at":"07:00"},{"at":"06:00","theme":"a"},{"at":"08:00","theme":""},{"at":7,"theme":"z"}]}'
+  set_now "2026-10-28 10:00"
+  assert_eq a "$(active_theme)" "only the complete slot counts"
+}
+
+test_dst_spring_forward_neighbours_straddle_the_change() {
+  export TZ=America/New_York
+  write_schedule '{"slots":[{"at":"01:30","theme":"a"},{"at":"03:30","theme":"b"}]}'
+  set_now "2026-03-08 03:15"
+  assert_eq a "$(active_theme)" "03:15 EDT is still a"
+  set_now "2026-03-08 03:30"
+  assert_eq b "$(active_theme)" "03:30 EDT is b"
+  local first second
+  first=$(ts_resolve_slot 2026-03-08 01:30)
+  second=$(ts_resolve_slot 2026-03-08 03:30)
+  assert_eq 3600 "$((second - first))" "one real hour apart, not two"
+}
+
+test_dst_fall_back_neighbours_straddle_the_change() {
+  write_schedule '{"slots":[{"at":"00:30","theme":"a"},{"at":"03:00","theme":"b"}]}'
+  assert_eq 12600 "$(($(ts_resolve_slot 2026-10-25 03:00) - $(ts_resolve_slot 2026-10-25 00:30)))" "3.5 real hours"
+}
+
+test_sun_fallback_agrees_when_sun_awk_fails() {
+  set_location 999 0 Nowhere
+  assert_eq "$(epoch "2026-06-21 07:00")" "$(ts_sun_event 2026-06-21 sunrise)" "event falls back"
+  assert_eq polar "$(ts_sun_fallback 2026-06-21)" "reason matches the fallback"
+}
+
+test_occurrence_days_are_calendar_neighbours_on_a_25_hour_day() {
+  write_schedule "$DAY_NIGHT"
+  set_now "2026-10-25 23:30"
+  assert_eq "2026-10-24 2026-10-25 2026-10-26" "$(ts_occurrences "$(ts_now)" | cut -f2 | sort -u | tr '\n' ' ' | sed 's/ $//')" "yesterday and tomorrow by calendar"
+  set_now "2026-10-25 00:15"
+  assert_eq "2026-10-24 2026-10-25 2026-10-26" "$(ts_occurrences "$(ts_now)" | cut -f2 | sort -u | tr '\n' ' ' | sed 's/ $//')" "also just after midnight"
 }
 
 run_tests

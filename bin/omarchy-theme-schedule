@@ -122,7 +122,7 @@ slot_count() {
   jq '.slots // [] | length' "$TS_CONFIG" 2>/dev/null || echo 0
 }
 
-# Not used by the CLI itself: Task 8's menu helpers read slot fields with it.
+# One field of slot n (1-based), for the menu helpers.
 slot_field() {
   jq -r --argjson index "$(($1 - 1))" --arg field "$2" '.slots[$index][$field]' "$TS_CONFIG"
 }
@@ -390,6 +390,135 @@ cmd_teardown() {
   t themeSchedule.teardownDone
 }
 
+pretty_theme() {
+  sed -E 's/-/ /g; s/\b(.)/\u\1/g' <<<"$1"
+}
+
+pretty_at() {
+  sed -E 's/^s/S/' <<<"$1"
+}
+
+# Runs a command for the menu, where nobody reads stderr: an error becomes a
+# notification instead.
+menu_run() {
+  local error
+
+  error=$("$@" 2>&1 >/dev/null) && return 0
+  omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.menuFailed)" "$error" >/dev/null
+  return 1
+}
+
+# Asks when a slot starts and prints its at; fails when dismissed.
+menu_pick_at() {
+  local sunrise sunset clock when time label i
+  local -a offsets=("" -1h -30m +30m +1h)
+  local -a offset_labels=(
+    "$(t themeSchedule.offsetExact)"
+    "$(t themeSchedule.offsetHourBefore)"
+    "$(t themeSchedule.offsetHalfBefore)"
+    "$(t themeSchedule.offsetHalfAfter)"
+    "$(t themeSchedule.offsetHourAfter)"
+  )
+
+  sunrise=$(t themeSchedule.menuSunrise)
+  sunset=$(t themeSchedule.menuSunset)
+  clock=$(t themeSchedule.menuClock)
+
+  when=$(omarchy-menu-select "$(t themeSchedule.menuPickTime)" "$sunrise" "$sunset" "$clock") || return 1
+  case $when in
+    "$sunrise") when=sunrise ;;
+    "$sunset") when=sunset ;;
+    "$clock")
+      time=$(omarchy-menu-input "$(t themeSchedule.menuClockPrompt)") || return 1
+      if ! ts_parse_at "$time" >/dev/null; then
+        omarchy-notification-send -g "$TS_ICON" -u normal "$(t themeSchedule.menuFailed)" \
+          "$(t themeSchedule.invalidAt "$time")" >/dev/null
+        return 1
+      fi
+      echo "$time"
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+
+  label=$(omarchy-menu-select "$(t themeSchedule.menuOffset)" "${offset_labels[@]}") || return 1
+  for i in "${!offset_labels[@]}"; do
+    if [[ ${offset_labels[$i]} == "$label" ]]; then
+      echo "$when${offsets[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Asks for a theme and prints its name; fails when dismissed.
+menu_pick_theme() {
+  local name
+
+  name=$(omarchy-theme-list | awk '!seen[$0]++' | omarchy-menu-select "$(t themeSchedule.menuPickTheme)" -- --maxheight 520) || return 1
+  ts_normalize_theme "$name"
+}
+
+menu_add() {
+  local at theme
+
+  at=$(menu_pick_at) || return 0
+  theme=$(menu_pick_theme) || return 0
+  menu_run cmd_add "$at" "$theme"
+}
+
+# Today's slots in time order. A row starts with its slot number, which is
+# all that is read back from the choice.
+menu_slots() {
+  local now today epoch day at theme number choice action change_time change_theme remove
+  local -a rows=()
+
+  now=$(ts_now)
+  today=$(date -d "@$now" +%F)
+  while IFS=$'\t' read -r epoch day at theme number; do
+    rows+=("$number. $(pretty_at "$at") ($(date -d "@$epoch" +%H:%M)) → $(pretty_theme "$theme")")
+  done < <(ts_occurrences "$now" | awk -F '\t' -v today="$today" '$2 == today')
+
+  if ((${#rows[@]} == 0)); then
+    menu_add
+    return
+  fi
+
+  choice=$(omarchy-menu-select "$(t themeSchedule.menuSlots)" "${rows[@]}") || return 0
+  number=${choice%%.*}
+  [[ $number =~ ^[0-9]+$ ]] || return 0
+
+  change_time=$(t themeSchedule.menuChangeTime)
+  change_theme=$(t themeSchedule.menuChangeTheme)
+  remove=$(t themeSchedule.menuRemove)
+  action=$(omarchy-menu-select "$(t themeSchedule.menuSlotAction)" "$change_time" "$change_theme" "$remove") || return 0
+
+  case $action in
+    "$change_time")
+      at=$(menu_pick_at) || return 0
+      menu_run cmd_set "$number" "$at" "$(slot_field "$number" theme)"
+      ;;
+    "$change_theme")
+      theme=$(menu_pick_theme) || return 0
+      menu_run cmd_set "$number" "$(slot_field "$number" at)" "$theme"
+      ;;
+    "$remove")
+      menu_run cmd_remove "$number"
+      ;;
+  esac
+}
+
+cmd_menu() {
+  case ${1:-} in
+    slots) menu_slots ;;
+    add) menu_add ;;
+    *)
+      usage >&2
+      return 1
+      ;;
+  esac
+}
+
 main() {
   case ${1:-status} in
     status) cmd_status ;;
@@ -400,6 +529,7 @@ main() {
     add) cmd_add "${@:2}" ;;
     set) cmd_set "${@:2}" ;;
     remove) cmd_remove "${@:2}" ;;
+    menu) cmd_menu "${@:2}" ;;
     setup) cmd_setup ;;
     teardown) cmd_teardown ;;
     -h | --help | help) usage ;;

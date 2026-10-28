@@ -1,0 +1,33 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm base-devel jq gawk perl git
+      # makepkg --printsrcinfo, which the package test runs, refuses root.
+      - name: Create a build user
+        run: useradd --create-home builder
+      - uses: actions/checkout@v4
+      - name: Let the build user own the checkout
+        run: |
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Run the tests
+        run: su builder -c 'cd "$GITHUB_WORKSPACE" && make test'
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install shellcheck
+        run: pacman -Syu --noconfirm git shellcheck
+      - uses: actions/checkout@v4
+      - name: Check the shell scripts
+        run: shellcheck -S error bin/* lib/theme-schedule/schedule.sh install.sh tools/*.sh test/*.sh

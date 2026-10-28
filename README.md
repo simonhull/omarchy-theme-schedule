@@ -1,3 +1,5 @@
+[![test](https://github.com/simonhull/omarchy-theme-schedule/actions/workflows/test.yml/badge.svg)](https://github.com/simonhull/omarchy-theme-schedule/actions/workflows/test.yml)
+
 # omarchy-theme-schedule
 
 Switch your Omarchy theme on a daily schedule. By default a light theme at
@@ -18,6 +20,11 @@ Appearance › Theme Schedule to the Omarchy menu. Then turn it on from that
 menu, or with:
 
     omarchy theme schedule on
+
+Running it again upgrades to the latest version, or says so if you already have
+it. To rebuild anyway, add `--force`:
+
+    curl -fsSL https://raw.githubusercontent.com/simonhull/omarchy-theme-schedule/main/install.sh | bash -s -- --force
 
 ### From a clone
 

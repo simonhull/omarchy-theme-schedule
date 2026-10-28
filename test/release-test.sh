@@ -30,7 +30,6 @@ given_remote_and_clone() {
     git commit -q -m "Start"
     git push -q origin main
   )
-  git remote -v >/dev/null
   # Hooks go in after the first push, so only the release's pushes are logged.
   cat >"$BARE/hooks/post-receive" <<HOOK
 #!/bin/bash

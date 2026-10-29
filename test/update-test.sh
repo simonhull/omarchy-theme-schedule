@@ -23,8 +23,11 @@ given_git_fails() {
 exit 128'
 }
 
+# Runs a copy of the CLI that reports 0.1.1, so the tag lists below stay
+# "newer" or "older" whatever version the repo is at.
 check() {
-  omarchy-theme-schedule check-update "$@"
+  sed 's/^TS_VERSION=.*/TS_VERSION=0.1.1/' "$REPO/bin/omarchy-theme-schedule" >"$TEST_ROOT/pinned"
+  bash "$TEST_ROOT/pinned" check-update "$@"
 }
 
 test_up_to_date_prints_latest() {

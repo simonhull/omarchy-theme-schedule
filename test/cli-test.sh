@@ -134,8 +134,10 @@ test_t_substitutes_each_argument_once() {
 }
 
 test_version_prints_name_and_number() {
-  assert_eq "omarchy-theme-schedule 0.1.1" "$(cli --version)" "--version"
-  assert_eq "omarchy-theme-schedule 0.1.1" "$(cli version)" "version"
+  local version
+  version=$(sed -n 's/^TS_VERSION=//p' "$REPO/bin/omarchy-theme-schedule")
+  assert_eq "omarchy-theme-schedule $version" "$(cli --version)" "--version"
+  assert_eq "omarchy-theme-schedule $version" "$(cli version)" "version"
   assert_contains "$(cli --help)" "--version" "usage lists it"
 }
 

@@ -1,7 +1,7 @@
 # Maintainer: Simon Hull <5488089+simonhull@users.noreply.github.com>
 
 pkgname=omarchy-theme-schedule
-pkgver=0.1.1
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Switch Omarchy themes on a daily schedule: light at sunrise, dark at sunset, or any times you pick"
 arch=('any')
